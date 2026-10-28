@@ -1,29 +1,45 @@
-# Night Freeway
+# Night Railway
 
-A night highway drive drawn with points of light.
+光の点だけで、夜間の鉄道前面展望を描くシングルページのCanvasアニメーションです。
 
-A single-page canvas animation inspired by a classic DOS/Windows screensaver. There is no build step and no external dependency other than a web font: open `index.html` in a browser, or serve it from any static host (GitHub Pages, Cloudflare Pages, etc.).
+![Night Railway](rail-mode.png)
+
+## Demo
+
+GitHub Pages: <https://sylphjp.github.io/NightRailway/>
+
+`index.html`をMicrosoft Edge、Google Chrome、Firefoxなどのブラウザーで直接開いても動作します。ビルドや追加ライブラリは不要です。
 
 ## Features
 
-- Perspective road built by integrating curvature and grade, with hills that hide lights beyond the crest and tilt the horizon
-- Delineators, lane markings, median street lamps, tunnels with sodium or LED lighting, and portals that limit what is visible
-- Other traffic: tail lights, brake lights, oncoming headlights with glare, and lorries with marker lamps
-- Starry sky, distant mountain ridge, city lights and occasional shooting stars
-- Speed control, pause, fullscreen, and left-/right-hand traffic switch
-- UI text follows the browser language (ja, en, zh, ko, fr, de, es)
+- 1067 mm軌間・枕木長1500 mmの複線
+- 門型架線柱と架線
+- G現示を基本とし、20%の確率でYG現示になる四灯式信号機
+- 3灯の前照灯と、最後尾の赤色尾灯を備えた対向列車
+- 上下線の両側に現れる駅ホーム
+- 星空、遠くの街明かり、流れ星などの夜景
+- 速度変更、一時停止、全画面表示
 
 ## Controls
 
-| Key | Action |
+| キー | 動作 |
 | --- | --- |
-| ↑ / ↓ | Speed up / slow down |
-| Space | Pause / resume |
-| D | Switch between left- and right-hand traffic |
-| F | Toggle fullscreen (Esc exits) |
+| `↑` / `↓` | 加速 / 減速 |
+| `Space` | 一時停止 / 再開 |
+| `F` | 全画面表示 / 解除 |
 
-On touch screens, use the buttons at the bottom left.
+画面左下のボタンでも操作できます。
 
-## Acknowledgements
+## Run locally
 
-This was inspired by the recreation of the FreeWay published at soyokaze2000.com, and its source code was used as a reference. Thanks also to FKS, the author of the original FreeWay, and to Yoshihiro Sugahara for the Windows port.
+このリポジトリをダウンロードまたはcloneし、`index.html`をブラウザーで開いてください。ローカルHTTPサーバーを使う場合は、リポジトリのルートをそのまま公開ディレクトリにできます。
+
+## Credits
+
+この作品は、Masayuki Hattaによる[Original Night Freeway](https://github.com/mhatta/nightfreeway)を基に、鉄道専用の描画へ変更した派生作品です。
+
+Original Night Freeway was inspired by the original FreeWay screensaver by FKS and the Windows port by Yoshihiro Sugahara.
+
+## License
+
+MIT Licenseです。元作品の著作権表示とライセンスを含む全文は[LICENSE](LICENSE)を参照してください。

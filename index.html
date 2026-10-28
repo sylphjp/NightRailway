@@ -5,7 +5,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Night Freeway</title>
+<title>Night Railway</title>
 <style>
 /* Layout: full-screen canvas with a small speedometer and controls at bottom left. Single dark theme for the night scene. */
 :root {
@@ -21,6 +21,8 @@
 }
 html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink); overflow: hidden; }
 body { font-family: var(--sans); }
+html.screensaver, html.screensaver body { cursor: none; }
+html.screensaver .hud { display: none; }
 #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; background: var(--bg); }
 
 .hud {
@@ -55,64 +57,60 @@ body { font-family: var(--sans); }
 }
 .hud button:hover { border-color: var(--amber); color: var(--amber); }
 .hud button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
-.hud button.drive { width: auto; padding: 0 12px; font: 500 13px var(--sans); }
 .keys { font-size: 11px; color: var(--dim); letter-spacing: .04em; }
 @media (max-width: 520px) { .keys { display: none; } }
 </style>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&display=swap">
 </head>
 <body>
-<canvas id="scene" aria-label="光る点で描いた夜の高速道路を走る映像"></canvas>
+<canvas id="scene" aria-label="光る点で描いた夜の鉄道を走る前面展望"></canvas>
 
 <div class="hud" id="hud">
   <button id="slower" type="button" aria-label="減速">−</button>
   <div class="speed" aria-live="off"><b id="kmh">101</b><span>km/h</span></div>
   <button id="faster" type="button" aria-label="加速">＋</button>
   <button id="pause" type="button" aria-label="一時停止">Ⅱ</button>
-  <button id="drive" class="drive" type="button" aria-label="通行方向を切り替え">左側通行</button>
   <button id="fs" type="button" aria-label="全画面">⛶</button>
-  <div class="keys" id="keys">↑↓ 速度 ・ Space 停止 ・ D 通行方向 ・ F 全画面</div>
+  <div class="keys" id="keys">↑↓ 速度 ・ Space 停止 ・ F 全画面</div>
 </div>
 
 <script>
 (() => {
+  // The Windows .scr launcher adds this flag. It removes all controls and the
+  // pointer while keeping the normal browser version fully interactive.
+  const SCREEN_SAVER = new URLSearchParams(location.search).has('screensaver');
+  if (SCREEN_SAVER) document.documentElement.classList.add('screensaver');
+
   // ---------------- UI language (follows the browser's language settings) ----------------
   const STRINGS = {
-    ja: { title: 'Night Freeway', scene: '光る点で描いた夜の高速道路を走る映像',
+    ja: { title: 'Night Railway', scene: '光る点で描いた夜の鉄道を走る前面展望',
           slower: '減速', faster: '加速', pause: '一時停止', resume: '再開',
-          left: '左側通行', right: '右側通行', drive: '通行方向を切り替え',
           fs: '全画面', fsExit: '全画面を解除',
-          keys: '↑↓ 速度 ・ Space 停止 ・ D 通行方向 ・ F 全画面' },
-    en: { title: 'Night Freeway', scene: 'A night drive on the freeway, drawn with points of light',
+          keys: '↑↓ 速度 ・ Space 停止 ・ F 全画面' },
+    en: { title: 'Night Railway', scene: 'A night railway cab view drawn with points of light',
           slower: 'Slow down', faster: 'Speed up', pause: 'Pause', resume: 'Resume',
-          left: 'Left-hand traffic', right: 'Right-hand traffic', drive: 'Switch driving side',
           fs: 'Fullscreen', fsExit: 'Exit fullscreen',
-          keys: '↑↓ speed · Space pause · D driving side · F fullscreen' },
-    zh: { title: 'Night Freeway', scene: '用光点描绘的夜间高速公路驾驶场景',
+          keys: '↑↓ speed · Space pause · F fullscreen' },
+    zh: { title: 'Night Railway', scene: '用光点描绘的夜间铁路驾驶室前方景色',
           slower: '减速', faster: '加速', pause: '暂停', resume: '继续',
-          left: '靠左行驶', right: '靠右行驶', drive: '切换行驶方向',
           fs: '全屏', fsExit: '退出全屏',
-          keys: '↑↓ 速度 · 空格 暂停 · D 行驶方向 · F 全屏' },
-    ko: { title: 'Night Freeway', scene: '빛나는 점으로 그린 밤 고속도로 주행 장면',
+          keys: '↑↓ 速度 · 空格 暂停 · F 全屏' },
+    ko: { title: 'Night Railway', scene: '빛나는 점으로 그린 야간 철도 전면 전망',
           slower: '감속', faster: '가속', pause: '일시 정지', resume: '재개',
-          left: '좌측통행', right: '우측통행', drive: '통행 방향 전환',
           fs: '전체 화면', fsExit: '전체 화면 종료',
-          keys: '↑↓ 속도 · Space 일시 정지 · D 통행 방향 · F 전체 화면' },
-    fr: { title: 'Night Freeway', scene: 'Un trajet de nuit sur l’autoroute, dessiné avec des points lumineux',
+          keys: '↑↓ 속도 · Space 일시 정지 · F 전체 화면' },
+    fr: { title: 'Night Railway', scene: 'Une vue nocturne depuis la cabine d’un train, dessinée avec des points lumineux',
           slower: 'Ralentir', faster: 'Accélérer', pause: 'Pause', resume: 'Reprendre',
-          left: 'Circulation à gauche', right: 'Circulation à droite', drive: 'Changer le sens de circulation',
           fs: 'Plein écran', fsExit: 'Quitter le plein écran',
-          keys: '↑↓ vitesse · Espace pause · D sens de circulation · F plein écran' },
-    de: { title: 'Night Freeway', scene: 'Eine nächtliche Autobahnfahrt aus Lichtpunkten',
+          keys: '↑↓ vitesse · Espace pause · F plein écran' },
+    de: { title: 'Night Railway', scene: 'Eine nächtliche Führerstandsansicht aus Lichtpunkten',
           slower: 'Langsamer', faster: 'Schneller', pause: 'Pause', resume: 'Fortsetzen',
-          left: 'Linksverkehr', right: 'Rechtsverkehr', drive: 'Fahrseite wechseln',
           fs: 'Vollbild', fsExit: 'Vollbild beenden',
-          keys: '↑↓ Tempo · Leertaste Pause · D Fahrseite · F Vollbild' },
-    es: { title: 'Night Freeway', scene: 'Un viaje nocturno por la autopista dibujado con puntos de luz',
+          keys: '↑↓ Tempo · Leertaste Pause · F Vollbild' },
+    es: { title: 'Night Railway', scene: 'Una vista nocturna desde la cabina de un tren dibujada con puntos de luz',
           slower: 'Reducir velocidad', faster: 'Acelerar', pause: 'Pausa', resume: 'Reanudar',
-          left: 'Circulación por la izquierda', right: 'Circulación por la derecha', drive: 'Cambiar el lado de circulación',
           fs: 'Pantalla completa', fsExit: 'Salir de pantalla completa',
-          keys: '↑↓ velocidad · Espacio pausa · D lado de circulación · F pantalla completa' },
+          keys: '↑↓ velocidad · Espacio pausa · F pantalla completa' },
   };
   // pick the first supported language from the browser's preference list; fall back to English
   const LANG = (navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || 'en'])
@@ -125,9 +123,7 @@ body { font-family: var(--sans); }
   document.getElementById('slower').setAttribute('aria-label', T.slower);
   document.getElementById('faster').setAttribute('aria-label', T.faster);
   document.getElementById('pause').setAttribute('aria-label', T.pause);
-  document.getElementById('drive').setAttribute('aria-label', T.drive);
   document.getElementById('fs').setAttribute('aria-label', T.fs);
-  document.getElementById('drive').textContent = T.left;
   document.getElementById('keys').textContent = T.keys;
   // ---------------- Screen ----------------
   const cv = document.getElementById('scene');
@@ -146,14 +142,12 @@ body { font-family: var(--sans); }
   window.addEventListener('resize', resize);
   resize();
 
-  // ---------------- Camera & road ----------------
-  const CAM_X = -1.75;   // left lane (Japan drives on the left)
+  // ---------------- Camera & track ----------------
   const CAM_H = 1.2;
   const MAXD = 600;
   const offX = new Float64Array(MAXD + 2);
   const offY = new Float64Array(MAXD + 2);
   let trackS = 1000, speed = 28, heading = 0;
-  let side = 1, sideTarget = 1;   // +1 = left-hand traffic, -1 = right-hand (eased for a smooth flip)
 
   // ---------------- Position-based pseudo-random numbers ----------------
   function hash32(x) {
@@ -170,7 +164,7 @@ body { font-family: var(--sans); }
   const fade = (d, range) => clamp01(1 - d / range);
   const rand = n => Math.floor(Math.random() * (n + 1));   // equivalent to DxLib's GetRand(n)
 
-  // ---------------- Road shape ----------------
+  // ---------------- Track shape ----------------
   function curvTarget(idx) {
     if (rnd(idx, 1) < 0.35) return 0;
     const mag = 0.0010 + rnd(idx, 2) * 0.0030;
@@ -191,7 +185,7 @@ body { font-family: var(--sans); }
     const u = t < 0.4 ? smooth(t / 0.4) : 1;
     return slopeTarget(idx - 1) * (1 - u) + slopeTarget(idx) * u;
   }
-  function updateRoadShape() {
+  function updateTrackShape() {
     let ang = 0, pang = 0;
     offX[0] = 0; offY[0] = 0;
     for (let i = 0; i <= MAXD; i++) {
@@ -210,8 +204,7 @@ body { font-family: var(--sans); }
     const ox = offX[i] * (1 - f) + offX[i + 1] * f;
     const oy = offY[i] * (1 - f) + offY[i + 1] * f;
     P.sc = FOCAL / d;
-    // mirror the road layout sideways for right-hand traffic
-    P.x = CX + (side * (lat - CAM_X) + ox) * P.sc;
+    P.x = CX + (lat + ox) * P.sc;
     P.y = CY - (h + oy - CAM_H) * P.sc;
     return true;
   }
@@ -258,6 +251,9 @@ body { font-family: var(--sans); }
     head:   sprite(255, 245, 215),
     cityY:  sprite(255, 210, 140),
     red:    sprite(255, 30, 20),
+    signalY: sprite(255, 185, 55),
+    signalG: sprite(80, 255, 130),
+    cyan:   sprite(110, 210, 255),
     ufoC:   sprite(90, 255, 220),
     ufoM:   sprite(255, 80, 210),
     ufoG:   sprite(150, 255, 90),
@@ -489,7 +485,7 @@ body { font-family: var(--sans); }
     }
   }
 
-  // ---------------- Road lights ----------------
+  // ---------------- Track lights ----------------
   function drawRow(spacing, onCount, cycle, lat, h, rad, col, inten, range) {
     for (let n = Math.ceil((trackS + 1) / spacing); ; n++) {
       const d = n * spacing - trackS;
@@ -516,95 +512,228 @@ body { font-family: var(--sans); }
     ctx.restore();
   }
 
-  function drawRoad() {
-    // road surface lit by our own headlights
-    groundPool(14, CAM_X, 5, '255,240,200', 0.07);
-    groundPool(32, CAM_X, 7, '255,240,200', 0.04);
+  // ---------------- Railway infrastructure ----------------
+  const RAIL_HALF_GAUGE = 0.5335;  // 1067 mm gauge
+  const SLEEPER_HALF_WIDTH = 0.75; // 1500 mm overall sleeper width
 
-    // light pools under the street lamps
-    const LAMP = 45;
-    for (let n = Math.ceil((trackS + 3) / LAMP); ; n++) {
-      const d = n * LAMP - trackS;
+  function worldSegment(d1, lat1, h1, d2, lat2, h2, color, width, alpha) {
+    if (!project(d1, lat1, h1)) return;
+    const x1 = P.x, y1 = P.y;
+    if (!project(d2, lat2, h2)) return;
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(P.x, P.y); ctx.stroke();
+  }
+
+  function worldCurve(lat, h, near, far, step, color, width, alpha) {
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    let started = false;
+    for (let d = near; d <= far; d += step) {
+      if (!project(d, lat, h)) continue;
+      if (!started) { ctx.moveTo(P.x, P.y); started = true; }
+      else ctx.lineTo(P.x, P.y);
+    }
+    if (started) ctx.stroke();
+  }
+
+  function drawSleepers(center, range) {
+    const SPACING = 0.78;
+    for (let n = Math.ceil((trackS + 2) / SPACING); ; n++) {
+      const d = n * SPACING - trackS;
+      if (d > range) break;
+      const a = 0.20 + 0.38 * fade(d, range);
+      worldSegment(d, center - SLEEPER_HALF_WIDTH, 0.025, d, center + SLEEPER_HALF_WIDTH, 0.025,
+                   'rgb(155,165,185)', Math.max(0.45, 1.5 * FOCAL / d / 35), a);
+    }
+  }
+
+  function drawSignal(n, d, lat) {
+    // Four-lamp type B: YG uses the upper Y and lower G together.
+    // All signals remain permissive: 80% G, 20% YG; Y and R never appear.
+    const isYG = rnd(n, 86) < 0.20;
+    const headScale = 0.75;
+    const headCenter = 3.95;
+    const lamps = [0.60, 0.20, -0.20, -0.60].map(offset => headCenter + offset * headScale);
+    const a = fade(d, 560);
+
+    worldSegment(d, lat, 0.1, d, lat, 4.8, 'rgb(125,145,165)', Math.max(0.7, P.sc * 0.025), 0.48 * fade(d, 520));
+    worldSegment(d, lat - 0.35, 4.75, d, lat + 0.35, 4.75, 'rgb(145,165,185)', 1, 0.42 * fade(d, 520));
+
+    // Black backboard and four dark lenses make the aspect legible nearby.
+    // The rest of the scene uses additive blending, so switch briefly for
+    // opaque signal hardware and restore it before drawing the lit aspects.
+    ctx.globalCompositeOperation = 'source-over';
+    if (project(d, lat, headCenter)) {
+      const sc = P.sc;
+      const w = Math.max(1.4, 0.42 * headScale * sc);
+      const h = Math.max(4.5, 1.72 * headScale * sc);
+      ctx.globalAlpha = 0.82 * a;
+      ctx.fillStyle = 'rgb(9,14,18)';
+      ctx.beginPath();
+      ctx.roundRect(P.x - w / 2, P.y - h / 2, w, h, Math.min(w / 2, 0.18 * sc));
+      ctx.fill();
+    }
+    for (const h of lamps) {
+      if (!project(d, lat, h)) continue;
+      ctx.globalAlpha = 0.72 * a;
+      ctx.fillStyle = 'rgb(34,43,47)';
+      ctx.beginPath();
+      ctx.arc(P.x, P.y, Math.max(0.45, 0.08 * P.sc), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'lighter';
+
+    if (isYG && project(d, lat, lamps[0]))
+      glow(P.x, P.y, 0.105 * P.sc, C.signalY, 0.96 * a);
+    if (project(d, lat, lamps[3]))
+      glow(P.x, P.y, 0.105 * P.sc, C.signalG, 0.96 * a);
+  }
+
+  function drawStation() {
+    const CYCLE = 1350, START = 260, END = 455;
+    const platforms = [
+      // Our side, outside the left-hand track.
+      { edge: -2.25, outer: -3.65, post: -3.35, lamp: -3.30, edgeLight: -2.18 },
+      // Opposing side, outside the right-hand track.
+      { edge:  6.35, outer:  7.75, post:  7.45, lamp:  7.40, edgeLight:  6.28 },
+    ];
+    const base = Math.floor(trackS / CYCLE) * CYCLE;
+    for (let b = base - CYCLE; b <= trackS + MAXD; b += CYCLE) {
+      const ds = b + START - trackS, de = b + END - trackS;
+      if (de < 2 || ds > MAXD) continue;
+      const near = Math.max(2, ds), far = Math.min(MAXD - 1, de);
+      for (const platform of platforms) {
+        worldCurve(platform.edge, 0.62, near, far, 3, 'rgb(200,205,215)', 1.3, 0.36);
+        worldCurve(platform.outer, 0.62, near, far, 3, 'rgb(110,125,150)', 1.0, 0.22);
+        worldCurve(platform.post, 3.42, near, far, 4, 'rgb(100,120,145)', 0.7, 0.18);
+        for (let s = Math.ceil((trackS + near) / 7) * 7; s < trackS + far; s += 7) {
+          const d = s - trackS;
+          worldSegment(d, platform.post, 0.6, d, platform.post, 3.4,
+                       'rgb(105,125,150)', 0.8, 0.28 * fade(d, 500));
+          if (project(d, platform.lamp, 3.25))
+            glow(P.x, P.y, 0.16 * P.sc, C.white, 0.75 * fade(d, 520));
+          if (project(d, platform.edgeLight, 0.72))
+            glow(P.x, P.y, 0.045 * P.sc, C.cyan, 0.65 * fade(d, 420));
+        }
+      }
+    }
+  }
+
+  function drawRailway() {
+    // A cool, narrow pool of cab light over the ballast.
+    groundPool(15, 0, 4.2, '205,225,255', 0.045);
+    groundPool(34, 0, 6.0, '205,225,255', 0.022);
+
+    // Two tracks: our line and the opposing line to the right.
+    for (const center of [0, 4.1]) {
+      worldCurve(center - RAIL_HALF_GAUGE, 0.06, 2, MAXD - 1, 2.5, 'rgb(185,205,235)', 1.15, center === 0 ? 0.64 : 0.36);
+      worldCurve(center + RAIL_HALF_GAUGE, 0.06, 2, MAXD - 1, 2.5, 'rgb(185,205,235)', 1.15, center === 0 ? 0.64 : 0.36);
+      drawRow(2.2, 0, 0, center - RAIL_HALF_GAUGE, 0.08, 0.035, C.refW, center === 0 ? 0.72 : 0.36, 220);
+      drawRow(2.2, 0, 0, center + RAIL_HALF_GAUGE, 0.08, 0.035, C.refW, center === 0 ? 0.72 : 0.36, 220);
+    }
+    drawSleepers(0, 145);
+    drawSleepers(4.1, 105);
+    drawRow(14, 0, 0, -1.55, 0.35, 0.045, C.refW, 0.48, 360);
+    drawRow(14, 0, 0, 5.65, 0.35, 0.045, C.refO, 0.30, 300);
+
+    // Contact wires create a strong cab-view vanishing point.
+    worldCurve(0, 5.25, 3, MAXD - 1, 3, 'rgb(135,165,200)', 0.75, 0.34);
+    worldCurve(4.1, 5.25, 3, MAXD - 1, 3, 'rgb(135,165,200)', 0.65, 0.24);
+    const POLE = 44;
+    const GANTRY_LEFT = -2.25, GANTRY_RIGHT = 6.35;
+    for (let n = Math.ceil((trackS + 1) / POLE); ; n++) {
+      const d = n * POLE - trackS;
       if (d >= MAXD) break;
-      const a = 0.10 * fade(d, 350);
-      groundPool(d, 2.0, 8, '255,150,60', a);
-      groundPool(d, 7.0, 8, '255,150,60', a);
+      const a = 0.42 * fade(d, 560);
+      // Two-legged portal gantry instead of a long one-sided cantilever.
+      worldSegment(d, GANTRY_LEFT, 0.1, d, GANTRY_LEFT, 6.4, 'rgb(110,135,165)', 1.0, a);
+      worldSegment(d, GANTRY_RIGHT, 0.1, d, GANTRY_RIGHT, 6.4, 'rgb(110,135,165)', 1.0, a);
+      worldSegment(d, GANTRY_LEFT, 6.1, d, GANTRY_RIGHT, 6.1, 'rgb(110,135,165)', 0.9, a * 0.85);
+      worldSegment(d, GANTRY_LEFT, 5.45, d, GANTRY_LEFT + 0.72, 6.1, 'rgb(100,125,155)', 0.75, a * 0.72);
+      worldSegment(d, GANTRY_RIGHT, 5.45, d, GANTRY_RIGHT - 0.72, 6.1, 'rgb(100,125,155)', 0.75, a * 0.72);
+      worldSegment(d, 0, 6.1, d, 0, 5.25, 'rgb(135,155,180)', 0.7, a);
+      worldSegment(d, 4.1, 6.1, d, 4.1, 5.25, 'rgb(135,155,180)', 0.7, a);
+      if (project(d, GANTRY_LEFT, 5.7)) glow(P.x, P.y, 0.045 * P.sc, C.cyan, 0.44 * fade(d, 500));
+      if (project(d, GANTRY_RIGHT, 5.7)) glow(P.x, P.y, 0.045 * P.sc, C.cyan, 0.32 * fade(d, 500));
     }
 
-    drawRow(3, 3, 7, 0.0, 0.02, 0.06, C.white, 0.55, 150);   // dashed lane divider
-    drawRow(3, 0, 0, -3.5, 0.02, 0.05, C.white, 0.35, 110);  // edge lines
-    drawRow(3, 0, 0, 3.5, 0.02, 0.05, C.white, 0.30, 110);
-    drawRow(3, 3, 7, 9.0, 0.02, 0.06, C.white, 0.15, 80);    // dashed divider on the oncoming carriageway
-
-    drawRow(12, 0, 0, -4.0, 0.9, 0.06, C.refW, 0.9, 420);    // delineators: left side = white
-    drawRow(12, 0, 0, 3.9, 0.9, 0.06, C.refO, 0.9, 420);     // median side = orange
-    drawRow(12, 0, 0, 5.1, 0.9, 0.05, C.refO, 0.2, 250);
-    drawRow(12, 0, 0, 13.0, 0.9, 0.05, C.refW, 0.2, 250);
-
-    drawRow(LAMP, 0, 0, 4.5, 10.0, 0.35, C.lamp, 1.0, MAXD); // street lamps on the median
-  }
-
-  // ---------------- Other cars ----------------
-  const NSAME = 10, NOPP = 14;
-  const cars = [];
-  function spawnCar(c, initial) {
-    c.brake = 0;
-    if (!c.opp) {
-      if (rand(99) < 45) {
-        c.lane = -1.75;
-        c.v = speed * (0.85 + rand(10) / 100);
-        c.s = trackS + 80 + rand(450);
-      } else {
-        c.lane = 1.75;
-        c.v = speed + 2 + rand(80) / 10;
-        c.s = initial ? trackS + 20 + rand(500) : trackS - 30 - rand(150);
-      }
-    } else {
-      c.lane = rand(1) ? 7.25 : 10.75;
-      c.v = -(24 + rand(80) / 10);
-      c.s = initial ? trackS + rand(MAXD) : trackS + MAXD + rand(400);
+    const SIGNAL = 235;
+    // Keep the nearest signal until it actually reaches the cab. Starting the
+    // sequence at +28 m made it vanish noticeably before the viewpoint.
+    for (let n = Math.ceil((trackS + 1) / SIGNAL); ; n++) {
+      const d = n * SIGNAL - trackS;
+      if (d >= MAXD) break;
+      drawSignal(n, d, -1.9);
     }
-  }
-  for (let i = 0; i < NSAME + NOPP; i++) {
-    const c = { opp: i >= NSAME };
-    spawnCar(c, true);
-    cars.push(c);
+    drawStation();
   }
 
-  function updateCars(dt) {
-    for (const c of cars) {
-      c.s += c.v * dt;
-      const d = c.s - trackS;
-      if (!c.opp) {
-        if (c.lane < 0 && d < 45 && c.v < speed + 1) c.v += 6 * dt;  // car ahead keeps its distance
-        if (c.brake > 0) c.brake -= dt;
-        else if (Math.random() < dt / 15) c.brake = 0.8 + Math.random();
-        if (d > MAXD + 80 || d < -260) spawnCar(c, false);
-      } else if (d < -5) {
-        spawnCar(c, false);
-      }
+  // ---------------- Other trains ----------------
+  const trains = [
+    { s: trackS + 430, v: -31, cars: 9 },
+  ];
+
+  function respawnTrain(t, initial) {
+    t.v = -(27 + Math.random() * 9);
+    t.s = trackS + (initial ? 180 + Math.random() * 430 : MAXD + 260 + Math.random() * 500);
+    t.cars = 7 + rand(4);
+  }
+
+  function updateTrains(dt) {
+    for (const t of trains) {
+      t.s += t.v * dt;
+      const d = t.s - trackS;
+      if (d < -t.cars * 20 - 20) respawnTrain(t, false);
     }
   }
 
-  function drawCars() {
-    for (const c of cars) {
-      const d = c.s - trackS;
-      if (d < 2 || d >= MAXD) continue;
-      if (!c.opp) {
-        const br = c.brake > 0;
-        const inten = (br ? 1.0 : 0.6) * fade(d, 650);
-        const rr = br ? 0.09 : 0.07;
-        for (const k of [-1, 1]) {
-          if (project(d, c.lane + 0.7 * k, 0.8)) glow(P.x, P.y, rr * P.sc, C.tail, inten);
+  function drawTrainWindows(d, center, cars, intensity) {
+    for (let car = 0; car < cars; car++) {
+      const dc = d + car * 19;
+      if (dc < 2 || dc >= MAXD) continue;
+      for (const along of [-5.5, -2.5, 0.5, 3.5, 6.5]) {
+        const dw = dc + along;
+        if (dw < 2 || dw >= MAXD) continue;
+        for (const edge of [-0.88, 0.88]) {
+          if (project(dw, center + edge, 1.75))
+            glow(P.x, P.y, 0.055 * P.sc, C.cyan, intensity * fade(dw, MAXD));
         }
-        if (br && project(d, c.lane, 1.15)) glow(P.x, P.y, 0.05 * P.sc, C.tail, inten);
-      } else {
-        const flick = 0.75 + 0.25 * Math.sin(d * 0.9);       // flicker through the anti-glare screen
-        const inten = fade(d, MAXD) * flick;
+      }
+      if (project(dc, center, 3.15)) glow(P.x, P.y, 0.035 * P.sc, C.white, 0.22 * intensity * fade(dc, MAXD));
+    }
+  }
+
+  function drawTrains() {
+    for (const t of trains) {
+      const d = t.s - trackS;
+      const tailD = d + t.cars * 19 - 4.5;
+      // An opposing train's nose passes first. Keep drawing the carriages
+      // until the back of the last car has also gone behind the cab.
+      if (tailD < 2 || d >= MAXD) continue;
+      const center = 4.1;
+      drawTrainWindows(d + 8, center, t.cars, 0.58);
+      if (d >= 2) {
         for (const k of [-1, 1]) {
-          if (project(d, c.lane + 0.7 * k, 0.65)) glow(P.x, P.y, 0.13 * P.sc, C.head, inten);
+          if (project(d, center + 0.58 * k, 1.25)) glow(P.x, P.y, 0.16 * P.sc, C.head, 1.0 * fade(d, MAXD));
         }
-        if (d < 90 && project(d, c.lane, 0.65)) glow(P.x, P.y, 1.2 * P.sc, C.head, 0.25 * (1 - d / 90));
+        if (project(d, center, 2.55))
+          glow(P.x, P.y, 0.075 * P.sc, C.head, 0.55 * fade(d, 500));
+        if (d < 100 && project(d, center, 1.35)) glow(P.x, P.y, 1.25 * P.sc, C.head, 0.22 * (1 - d / 100));
+      } else {
+        // Once the nose has passed the cab, the rear face becomes visible.
+        const rearD = d + t.cars * 19 - 1.5;
+        for (const k of [-1, 1]) {
+          if (project(rearD, center + 0.52 * k, 1.18))
+            glow(P.x, P.y, 0.11 * P.sc, C.tail, 0.95 * fade(rearD, 600));
+        }
+        if (project(rearD, center, 2.45))
+          glow(P.x, P.y, 0.045 * P.sc, C.red, 0.42 * fade(rearD, 500));
       }
     }
   }
@@ -690,19 +819,6 @@ body { font-family: var(--sans); }
       }));
   }
 
-  // switch between left- and right-hand traffic
-  const driveBtn = document.getElementById('drive');
-  function setDrive(leftHand) {
-    sideTarget = leftHand ? 1 : -1;
-    driveBtn.textContent = leftHand ? T.left : T.right;
-    try { localStorage.setItem('drive-side', leftHand ? 'left' : 'right'); } catch (e) {}
-  }
-  driveBtn.addEventListener('click', () => setDrive(sideTarget < 0));
-  window.addEventListener('keydown', e => { if (e.code === 'KeyD') setDrive(sideTarget < 0); });
-  try {
-    if (localStorage.getItem('drive-side') === 'right') { setDrive(false); side = -1; }
-  } catch (e) {}
-
   let idleTimer = 0;
   function wake() { hud.classList.remove('idle'); idleTimer = 0; }
   window.addEventListener('pointermove', wake);
@@ -721,9 +837,6 @@ body { font-family: var(--sans); }
     if (keys.ArrowDown) speed -= 8 * dt;
     speed = Math.min(45, Math.max(8, speed));
 
-    // ease toward the selected driving side
-    side += (sideTarget - side) * Math.min(1, dt * 3);
-
     idleTimer += dt;
     if (idleTimer > 4) hud.classList.add('idle');
 
@@ -731,11 +844,11 @@ body { font-family: var(--sans); }
       time += dt;
       heading += curvature(trackS) * speed * dt;
       trackS += speed * dt;
-      updateCars(dt);
+      updateTrains(dt);
       updateMeteors(dt);
       updateUfo(dt);
     }
-    updateRoadShape();
+    updateTrackShape();
 
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
@@ -748,8 +861,8 @@ body { font-family: var(--sans); }
     drawCity(time);
     drawMeteors();
     drawUfo();
-    drawRoad();
-    drawCars();
+    drawRailway();
+    drawTrains();
 
     const kmh = Math.round(speed * 3.6);
     if (kmh !== lastKmh) { kmhEl.textContent = kmh; lastKmh = kmh; }
