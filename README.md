@@ -12,9 +12,9 @@ GitHub Pages: <https://sylphjp.github.io/NightRailway/>
 
 ## Features
 
-- 1067 mm軌間・枕木長1500 mmの複線
+- 1067 mm軌間の複線
 - 門型架線柱と架線
-- G現示を基本とし、20%の確率でYG現示になる四灯式信号機
+- G現示を基本とし、たまにYG現示になる四灯式信号機
 - 3灯の前照灯と、最後尾の赤色尾灯を備えた対向列車
 - 上下線の両側に現れる駅ホーム
 - 星空、遠くの街明かり、流れ星などの夜景
@@ -36,7 +36,7 @@ GitHub Pages: <https://sylphjp.github.io/NightRailway/>
 
 ## Credits
 
-この作品は、Masayuki Hattaによる[Original Night Freeway](https://github.com/mhatta/nightfreeway)を基に、鉄道専用の描画へ変更した派生作品です。
+この作品は、Masayuki Hatta様による[Original Night Freeway](https://github.com/mhatta/nightfreeway)を基に、鉄道専用の描画へ変更した派生作品です。
 
 Original Night Freeway was inspired by the original FreeWay screensaver by FKS and the Windows port by Yoshihiro Sugahara.
 
