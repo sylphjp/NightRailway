@@ -515,6 +515,48 @@ html.screensaver .hud { display: none; }
   // ---------------- Railway infrastructure ----------------
   const RAIL_HALF_GAUGE = 0.5335;  // 1067 mm gauge
   const SLEEPER_HALF_WIDTH = 0.75; // 1500 mm overall sleeper width
+  const MAIN_TRACK_LEFT = 0;
+  const MAIN_TRACK_RIGHT = 4.1;
+
+  // Station family. Every third station is a two-platform, four-track
+  // passing station. Its sidings branch away outside the existing platforms,
+  // so the two main tracks never move and the original layout stays intact.
+  const STATION_CYCLE = 1350;
+  const STATION_START = 260;
+  const STATION_END = 455;
+  const PASSING_STATION_INTERVAL = 3;
+  const TURNOUT_LENGTH = 180;
+  const SIDING_LEFT = -5.9;
+  const SIDING_RIGHT = 10.0;
+  const PLATFORMS = [
+    { edge: -2.25, outer: -3.65, post: -3.35, lamp: -3.30, edgeLight: -2.18, outerLight: -3.72 },
+    { edge:  6.35, outer:  7.75, post:  7.45, lamp:  7.40, edgeLight:  6.28, outerLight:  7.82 },
+  ];
+
+  const positiveMod = (n, m) => ((n % m) + m) % m;
+  const isPassingStation = index => positiveMod(index, PASSING_STATION_INTERVAL) === 1;
+
+  function sidingFactor(s, stationIndex) {
+    if (!isPassingStation(stationIndex)) return 0;
+    const base = stationIndex * STATION_CYCLE;
+    const platformStart = base + STATION_START;
+    const platformEnd = base + STATION_END;
+    const turnoutStart = platformStart - TURNOUT_LENGTH;
+    const turnoutEnd = platformEnd + TURNOUT_LENGTH;
+    if (s <= turnoutStart || s >= turnoutEnd) return 0;
+    if (s < platformStart) return smooth((s - turnoutStart) / TURNOUT_LENGTH);
+    if (s <= platformEnd) return 1;
+    return smooth((turnoutEnd - s) / TURNOUT_LENGTH);
+  }
+
+  function passingFactorAt(s) {
+    const index = Math.floor(s / STATION_CYCLE);
+    return sidingFactor(s, index);
+  }
+
+  function sidingCenter(s, mainCenter, outerCenter, stationIndex) {
+    return mainCenter + (outerCenter - mainCenter) * sidingFactor(s, stationIndex);
+  }
 
   function worldSegment(d1, lat1, h1, d2, lat2, h2, color, width, alpha) {
     if (!project(d1, lat1, h1)) return;
@@ -542,6 +584,21 @@ html.screensaver .hud { display: none; }
     if (started) ctx.stroke();
   }
 
+  function worldVariableCurve(latAt, h, near, far, step, color, width, alpha) {
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    let started = false;
+    for (let d = near; d <= far; d += step) {
+      if (!project(d, latAt(trackS + d), h)) continue;
+      if (!started) { ctx.moveTo(P.x, P.y); started = true; }
+      else ctx.lineTo(P.x, P.y);
+    }
+    if (started) ctx.stroke();
+  }
+
   function drawSleepers(center, range) {
     const SPACING = 0.78;
     for (let n = Math.ceil((trackS + 2) / SPACING); ; n++) {
@@ -550,6 +607,64 @@ html.screensaver .hud { display: none; }
       const a = 0.20 + 0.38 * fade(d, range);
       worldSegment(d, center - SLEEPER_HALF_WIDTH, 0.025, d, center + SLEEPER_HALF_WIDTH, 0.025,
                    'rgb(155,165,185)', Math.max(0.45, 1.5 * FOCAL / d / 35), a);
+    }
+  }
+
+  function drawPassingStationTracks() {
+    const firstIndex = Math.floor(trackS / STATION_CYCLE) - 1;
+    const lastIndex = Math.floor((trackS + MAXD) / STATION_CYCLE) + 1;
+    const sleeperSpacing = 0.78;
+    const reflectorSpacing = 2.2;
+
+    for (let stationIndex = firstIndex; stationIndex <= lastIndex; stationIndex++) {
+      if (!isPassingStation(stationIndex)) continue;
+      const base = stationIndex * STATION_CYCLE;
+      const routeStart = base + STATION_START - TURNOUT_LENGTH;
+      const routeEnd = base + STATION_END + TURNOUT_LENGTH;
+      const near = Math.max(2, routeStart - trackS);
+      const far = Math.min(MAXD - 1, routeEnd - trackS);
+      if (near >= far) continue;
+
+      const routes = [
+        { main: MAIN_TRACK_LEFT, outer: SIDING_LEFT, alpha: 0.52 },
+        { main: MAIN_TRACK_RIGHT, outer: SIDING_RIGHT, alpha: 0.34 },
+      ];
+
+      for (const route of routes) {
+        const centerAt = s => sidingCenter(s, route.main, route.outer, stationIndex);
+        for (const railOffset of [-RAIL_HALF_GAUGE, RAIL_HALF_GAUGE]) {
+          worldVariableCurve(s => centerAt(s) + railOffset, 0.06, near, far, 1.7,
+                             'rgb(185,205,235)', 1.15, route.alpha);
+        }
+        worldVariableCurve(centerAt, 5.25, near, far, 2.5,
+                           'rgb(135,165,200)', 0.65, route.alpha * 0.65);
+
+        for (let n = Math.ceil((trackS + near) / sleeperSpacing); ; n++) {
+          const s = n * sleeperSpacing;
+          const d = s - trackS;
+          if (d > far) break;
+          const f = sidingFactor(s, stationIndex);
+          if (f < 0.015) continue;
+          const center = centerAt(s);
+          const a = (0.18 + 0.30 * fade(d, MAXD)) * f;
+          worldSegment(d, center - SLEEPER_HALF_WIDTH, 0.025,
+                       d, center + SLEEPER_HALF_WIDTH, 0.025,
+                       'rgb(145,155,175)', Math.max(0.42, 1.35 * FOCAL / d / 35), a);
+        }
+
+        for (let n = Math.ceil((trackS + near) / reflectorSpacing); ; n++) {
+          const s = n * reflectorSpacing;
+          const d = s - trackS;
+          if (d > far || d > 220) break;
+          const f = sidingFactor(s, stationIndex);
+          if (f < 0.04) continue;
+          const center = centerAt(s);
+          for (const railOffset of [-RAIL_HALF_GAUGE, RAIL_HALF_GAUGE]) {
+            if (project(d, center + railOffset, 0.08))
+              glow(P.x, P.y, 0.032 * P.sc, C.refW, 0.42 * f * fade(d, 220));
+          }
+        }
+      }
     }
   }
 
@@ -596,21 +711,17 @@ html.screensaver .hud { display: none; }
   }
 
   function drawStation() {
-    const CYCLE = 1350, START = 260, END = 455;
-    const platforms = [
-      // Our side, outside the left-hand track.
-      { edge: -2.25, outer: -3.65, post: -3.35, lamp: -3.30, edgeLight: -2.18 },
-      // Opposing side, outside the right-hand track.
-      { edge:  6.35, outer:  7.75, post:  7.45, lamp:  7.40, edgeLight:  6.28 },
-    ];
-    const base = Math.floor(trackS / CYCLE) * CYCLE;
-    for (let b = base - CYCLE; b <= trackS + MAXD; b += CYCLE) {
-      const ds = b + START - trackS, de = b + END - trackS;
+    const base = Math.floor(trackS / STATION_CYCLE) * STATION_CYCLE;
+    for (let b = base - STATION_CYCLE; b <= trackS + MAXD; b += STATION_CYCLE) {
+      const stationIndex = Math.round(b / STATION_CYCLE);
+      const passing = isPassingStation(stationIndex);
+      const ds = b + STATION_START - trackS, de = b + STATION_END - trackS;
       if (de < 2 || ds > MAXD) continue;
       const near = Math.max(2, ds), far = Math.min(MAXD - 1, de);
-      for (const platform of platforms) {
+      for (const platform of PLATFORMS) {
         worldCurve(platform.edge, 0.62, near, far, 3, 'rgb(200,205,215)', 1.3, 0.36);
-        worldCurve(platform.outer, 0.62, near, far, 3, 'rgb(110,125,150)', 1.0, 0.22);
+        worldCurve(platform.outer, 0.62, near, far, 3,
+                   passing ? 'rgb(190,200,215)' : 'rgb(110,125,150)', passing ? 1.25 : 1.0, passing ? 0.34 : 0.22);
         worldCurve(platform.post, 3.42, near, far, 4, 'rgb(100,120,145)', 0.7, 0.18);
         for (let s = Math.ceil((trackS + near) / 7) * 7; s < trackS + far; s += 7) {
           const d = s - trackS;
@@ -620,6 +731,8 @@ html.screensaver .hud { display: none; }
             glow(P.x, P.y, 0.16 * P.sc, C.white, 0.75 * fade(d, 520));
           if (project(d, platform.edgeLight, 0.72))
             glow(P.x, P.y, 0.045 * P.sc, C.cyan, 0.65 * fade(d, 420));
+          if (passing && project(d, platform.outerLight, 0.72))
+            glow(P.x, P.y, 0.045 * P.sc, C.cyan, 0.52 * fade(d, 420));
         }
       }
     }
@@ -631,36 +744,50 @@ html.screensaver .hud { display: none; }
     groundPool(34, 0, 6.0, '205,225,255', 0.022);
 
     // Two tracks: our line and the opposing line to the right.
-    for (const center of [0, 4.1]) {
+    for (const center of [MAIN_TRACK_LEFT, MAIN_TRACK_RIGHT]) {
       worldCurve(center - RAIL_HALF_GAUGE, 0.06, 2, MAXD - 1, 2.5, 'rgb(185,205,235)', 1.15, center === 0 ? 0.64 : 0.36);
       worldCurve(center + RAIL_HALF_GAUGE, 0.06, 2, MAXD - 1, 2.5, 'rgb(185,205,235)', 1.15, center === 0 ? 0.64 : 0.36);
       drawRow(2.2, 0, 0, center - RAIL_HALF_GAUGE, 0.08, 0.035, C.refW, center === 0 ? 0.72 : 0.36, 220);
       drawRow(2.2, 0, 0, center + RAIL_HALF_GAUGE, 0.08, 0.035, C.refW, center === 0 ? 0.72 : 0.36, 220);
     }
-    drawSleepers(0, 145);
-    drawSleepers(4.1, 105);
+    drawPassingStationTracks();
+    drawSleepers(MAIN_TRACK_LEFT, 145);
+    drawSleepers(MAIN_TRACK_RIGHT, 105);
     drawRow(14, 0, 0, -1.55, 0.35, 0.045, C.refW, 0.48, 360);
     drawRow(14, 0, 0, 5.65, 0.35, 0.045, C.refO, 0.30, 300);
 
     // Contact wires create a strong cab-view vanishing point.
-    worldCurve(0, 5.25, 3, MAXD - 1, 3, 'rgb(135,165,200)', 0.75, 0.34);
-    worldCurve(4.1, 5.25, 3, MAXD - 1, 3, 'rgb(135,165,200)', 0.65, 0.24);
+    worldCurve(MAIN_TRACK_LEFT, 5.25, 3, MAXD - 1, 3, 'rgb(135,165,200)', 0.75, 0.34);
+    worldCurve(MAIN_TRACK_RIGHT, 5.25, 3, MAXD - 1, 3, 'rgb(135,165,200)', 0.65, 0.24);
     const POLE = 44;
     const GANTRY_LEFT = -2.25, GANTRY_RIGHT = 6.35;
+    const PASSING_GANTRY_LEFT = SIDING_LEFT - 2.25;
+    const PASSING_GANTRY_RIGHT = SIDING_RIGHT + 2.25;
     for (let n = Math.ceil((trackS + 1) / POLE); ; n++) {
-      const d = n * POLE - trackS;
+      const s = n * POLE;
+      const d = s - trackS;
       if (d >= MAXD) break;
       const a = 0.42 * fade(d, 560);
-      // Two-legged portal gantry instead of a long one-sided cantilever.
-      worldSegment(d, GANTRY_LEFT, 0.1, d, GANTRY_LEFT, 6.4, 'rgb(110,135,165)', 1.0, a);
-      worldSegment(d, GANTRY_RIGHT, 0.1, d, GANTRY_RIGHT, 6.4, 'rgb(110,135,165)', 1.0, a);
-      worldSegment(d, GANTRY_LEFT, 6.1, d, GANTRY_RIGHT, 6.1, 'rgb(110,135,165)', 0.9, a * 0.85);
-      worldSegment(d, GANTRY_LEFT, 5.45, d, GANTRY_LEFT + 0.72, 6.1, 'rgb(100,125,155)', 0.75, a * 0.72);
-      worldSegment(d, GANTRY_RIGHT, 5.45, d, GANTRY_RIGHT - 0.72, 6.1, 'rgb(100,125,155)', 0.75, a * 0.72);
-      worldSegment(d, 0, 6.1, d, 0, 5.25, 'rgb(135,155,180)', 0.7, a);
-      worldSegment(d, 4.1, 6.1, d, 4.1, 5.25, 'rgb(135,155,180)', 0.7, a);
-      if (project(d, GANTRY_LEFT, 5.7)) glow(P.x, P.y, 0.045 * P.sc, C.cyan, 0.44 * fade(d, 500));
-      if (project(d, GANTRY_RIGHT, 5.7)) glow(P.x, P.y, 0.045 * P.sc, C.cyan, 0.32 * fade(d, 500));
+      const passing = passingFactorAt(s);
+      const leftPole = GANTRY_LEFT + (PASSING_GANTRY_LEFT - GANTRY_LEFT) * passing;
+      const rightPole = GANTRY_RIGHT + (PASSING_GANTRY_RIGHT - GANTRY_RIGHT) * passing;
+      const leftSidingCenter = MAIN_TRACK_LEFT + (SIDING_LEFT - MAIN_TRACK_LEFT) * passing;
+      const rightSidingCenter = MAIN_TRACK_RIGHT + (SIDING_RIGHT - MAIN_TRACK_RIGHT) * passing;
+
+      // Portal gantries widen with the sidings through passing stations.
+      worldSegment(d, leftPole, 0.1, d, leftPole, 6.4, 'rgb(110,135,165)', 1.0, a);
+      worldSegment(d, rightPole, 0.1, d, rightPole, 6.4, 'rgb(110,135,165)', 1.0, a);
+      worldSegment(d, leftPole, 6.1, d, rightPole, 6.1, 'rgb(110,135,165)', 0.9, a * 0.85);
+      worldSegment(d, leftPole, 5.45, d, leftPole + 0.72, 6.1, 'rgb(100,125,155)', 0.75, a * 0.72);
+      worldSegment(d, rightPole, 5.45, d, rightPole - 0.72, 6.1, 'rgb(100,125,155)', 0.75, a * 0.72);
+      worldSegment(d, MAIN_TRACK_LEFT, 6.1, d, MAIN_TRACK_LEFT, 5.25, 'rgb(135,155,180)', 0.7, a);
+      worldSegment(d, MAIN_TRACK_RIGHT, 6.1, d, MAIN_TRACK_RIGHT, 5.25, 'rgb(135,155,180)', 0.7, a);
+      if (passing > 0.015) {
+        worldSegment(d, leftSidingCenter, 6.1, d, leftSidingCenter, 5.25, 'rgb(135,155,180)', 0.65, a * passing);
+        worldSegment(d, rightSidingCenter, 6.1, d, rightSidingCenter, 5.25, 'rgb(135,155,180)', 0.65, a * passing);
+      }
+      if (project(d, leftPole, 5.7)) glow(P.x, P.y, 0.045 * P.sc, C.cyan, 0.44 * fade(d, 500));
+      if (project(d, rightPole, 5.7)) glow(P.x, P.y, 0.045 * P.sc, C.cyan, 0.32 * fade(d, 500));
     }
 
     const SIGNAL = 235;
