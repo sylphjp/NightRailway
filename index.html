@@ -531,6 +531,7 @@ html.screensaver .hud { display: none; }
   const TURNOUT_LENGTH = 180;
   const BLOCK_SIGNAL_SPACING = 235;
   const STOPPED_TRAIN_PROBABILITY = 0.30;
+  const GG_SPEED_KMH = 131;
   const HOME_SIGNAL_MARGIN = 20;
   const HOME_MAIN_LAT = -1.9;
   const HOME_SIDING_LAT = -2.75;
@@ -731,9 +732,11 @@ html.screensaver .hud { display: none; }
   }
 
   function drawSignal(n, d, lat) {
-    // Four-lamp type B: YG uses the upper Y and lower G together.
-    // All signals remain permissive: 80% G, 20% YG; Y and R never appear.
-    const isYG = rnd(n, 86) < 0.20;
+    // Four-lamp type B: ordinary running shows 80% G / 20% YG. At a
+    // displayed speed of 131 km/h or more, the upper and lower lamps both
+    // turn green as the hidden high-speed GG aspect.
+    const isGG = Math.round(speed * 3.6) >= GG_SPEED_KMH;
+    const isYG = !isGG && rnd(n, 86) < 0.20;
     const headScale = 0.75;
     const headCenter = 3.95;
     const lamps = [0.60, 0.20, -0.20, -0.60].map(offset => headCenter + offset * headScale);
@@ -766,8 +769,8 @@ html.screensaver .hud { display: none; }
     }
     ctx.globalCompositeOperation = 'lighter';
 
-    if (isYG && project(d, lat, lamps[0]))
-      glow(P.x, P.y, 0.105 * P.sc, C.signalY, 0.96 * a);
+    if ((isGG || isYG) && project(d, lat, lamps[0]))
+      glow(P.x, P.y, 0.105 * P.sc, isGG ? C.signalG : C.signalY, 0.96 * a);
     if (project(d, lat, lamps[3]))
       glow(P.x, P.y, 0.105 * P.sc, C.signalG, 0.96 * a);
   }
