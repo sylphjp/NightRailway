@@ -157,8 +157,11 @@ html.screensaver .hud { display: none; }
     x ^= x >>> 16;
     return x >>> 0;
   }
+  // Capture the clock once. The generated route changes on every launch, but
+  // remains stable for the entire session so curves never shift under the cab.
+  const WORLD_SEED = Date.now() >>> 0;
   const rnd = (n, salt) =>
-    (hash32(Math.imul(n | 0, 2654435761) ^ Math.imul(salt, 0x9E3779B9)) & 0xFFFFFF) / 16777216;
+    (hash32(Math.imul(n | 0, 2654435761) ^ Math.imul(salt, 0x9E3779B9) ^ WORLD_SEED) & 0xFFFFFF) / 16777216;
   const smooth = t => t * t * (3 - 2 * t);
   const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
   const fade = (d, range) => clamp01(1 - d / range);
