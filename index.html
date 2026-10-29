@@ -529,6 +529,7 @@ html.screensaver .hud { display: none; }
   const STATION_END = 455;
   const STATION_TYPE_COUNT = 3;
   const TURNOUT_LENGTH = 180;
+  const BLOCK_SIGNAL_SPACING = 235;
   const HOME_SIGNAL_MARGIN = 20;
   const HOME_MAIN_LAT = -1.9;
   const HOME_SIDING_LAT = -2.75;
@@ -551,10 +552,10 @@ html.screensaver .hud { display: none; }
     return stationIndex * STATION_CYCLE + STATION_START - TURNOUT_LENGTH - HOME_SIGNAL_MARGIN;
   }
 
-  function isNearPassingHomeSignal(s, radius = 80) {
+  function isNearPassingHomeSignal(s, radius = BLOCK_SIGNAL_SPACING) {
     const nearestIndex = Math.floor(s / STATION_CYCLE);
     for (let stationIndex = nearestIndex - 1; stationIndex <= nearestIndex + 1; stationIndex++) {
-      if (isPassingStation(stationIndex) && Math.abs(s - homeSignalS(stationIndex)) < radius)
+      if (isPassingStation(stationIndex) && Math.abs(s - homeSignalS(stationIndex)) <= radius)
         return true;
     }
     return false;
@@ -913,15 +914,14 @@ html.screensaver .hud { display: none; }
       if (project(d, rightPole, 5.7)) glow(P.x, P.y, 0.045 * P.sc, C.cyan, 0.32 * fade(d, 500));
     }
 
-    const SIGNAL = 235;
     // Keep the nearest signal until it actually reaches the cab. Starting the
     // sequence at +28 m made it vanish noticeably before the viewpoint.
-    for (let n = Math.ceil((trackS + 1) / SIGNAL); ; n++) {
-      const s = n * SIGNAL;
+    for (let n = Math.ceil((trackS + 1) / BLOCK_SIGNAL_SPACING); ; n++) {
+      const s = n * BLOCK_SIGNAL_SPACING;
       const d = s - trackS;
       if (d >= MAXD) break;
-      // Only a block signal that would overlap the new paired home signal is
-      // omitted; every other signal remains unchanged.
+      // Reserve one complete block-signal interval on both sides of each
+      // paired home signal; every signal outside that zone stays unchanged.
       if (!isNearPassingHomeSignal(s)) drawSignal(n, d, HOME_MAIN_LAT);
     }
     drawPassingHomeSignals();
