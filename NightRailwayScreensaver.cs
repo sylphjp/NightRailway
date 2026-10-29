@@ -72,6 +72,7 @@ internal sealed class SaverHost : Form
     private const int WS_MINIMIZEBOX = 0x00020000;
     private const int WS_MAXIMIZEBOX = 0x00010000;
     private const int WS_SYSMENU = 0x00080000;
+    private const uint SWP_FRAMECHANGED = 0x0020;
     private const uint SWP_SHOWWINDOW = 0x0040;
     private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
 
@@ -170,7 +171,8 @@ internal sealed class SaverHost : Form
 
         string url = new Uri(pagePath).AbsoluteUri + "?screensaver=1";
         string arguments =
-            "--app=\"" + url + "\" " +
+            "--kiosk \"" + url + "\" " +
+            "--edge-kiosk-type=fullscreen --kiosk-idle-timeout-minutes=0 " +
             "--user-data-dir=\"" + temporaryProfile + "\" " +
             "--no-first-run --disable-extensions --disable-sync " +
             "--disable-session-crashed-bubble --disable-background-networking " +
@@ -265,7 +267,8 @@ internal sealed class SaverHost : Form
         int style = GetWindowLong(window, GWL_STYLE);
         style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
         SetWindowLong(window, GWL_STYLE, style);
-        SetWindowPos(window, HWND_TOPMOST, desktop.Left, desktop.Top, desktop.Width, desktop.Height, SWP_SHOWWINDOW);
+        SetWindowPos(window, HWND_TOPMOST, desktop.Left, desktop.Top, desktop.Width, desktop.Height,
+                     SWP_FRAMECHANGED | SWP_SHOWWINDOW);
         SetForegroundWindow(window);
         edgePositioned = true;
         TopMost = false;
