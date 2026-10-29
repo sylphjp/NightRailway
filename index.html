@@ -1143,7 +1143,7 @@ html.screensaver .hud { display: none; }
 
     if (keys.ArrowUp) speed += 8 * dt;
     if (keys.ArrowDown) speed -= 8 * dt;
-    speed = Math.min(45, Math.max(8, speed));
+    speed = Math.min(45, Math.max(0, speed));
 
     idleTimer += dt;
     if (idleTimer > 4) hud.classList.add('idle');
