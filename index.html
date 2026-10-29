@@ -532,6 +532,11 @@ html.screensaver .hud { display: none; }
   const BLOCK_SIGNAL_SPACING = 235;
   const STOPPED_TRAIN_PROBABILITY = 0.30;
   const GG_SPEED_KMH = 131;
+  const CATENARY_SPAN = 44;
+  const DROPPER_SPACING = 11;
+  const CONTACT_WIRE_H = 5.25;
+  const MESSENGER_SUPPORT_H = 5.85;
+  const MESSENGER_SAG = 0.28;
   const HOME_SIGNAL_MARGIN = 20;
   const HOME_MAIN_LAT = -1.9;
   const HOME_SIDING_LAT = -2.75;
@@ -597,6 +602,11 @@ html.screensaver .hud { display: none; }
     return mainCenter + (outerCenter - mainCenter) * sidingFactor(s, stationIndex);
   }
 
+  function messengerHeightAt(s) {
+    const phase = positiveMod(s, CATENARY_SPAN) / CATENARY_SPAN;
+    return MESSENGER_SUPPORT_H - MESSENGER_SAG * 4 * phase * (1 - phase);
+  }
+
   function worldSegment(d1, lat1, h1, d2, lat2, h2, color, width, alpha) {
     if (!project(d1, lat1, h1)) return;
     const x1 = P.x, y1 = P.y;
@@ -636,6 +646,35 @@ html.screensaver .hud { display: none; }
       else ctx.lineTo(P.x, P.y);
     }
     if (started) ctx.stroke();
+  }
+
+  function worldSpatialCurve(latAt, heightAt, near, far, step, color, width, alpha) {
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    let started = false;
+    for (let d = near; d <= far; d += step) {
+      const s = trackS + d;
+      if (!project(d, latAt(s), heightAt(s))) continue;
+      if (!started) { ctx.moveTo(P.x, P.y); started = true; }
+      else ctx.lineTo(P.x, P.y);
+    }
+    if (started) ctx.stroke();
+  }
+
+  function drawCatenaryDroppers(latAt, near, far, alpha, factorAt = null) {
+    for (let n = Math.ceil((trackS + near) / DROPPER_SPACING); ; n++) {
+      const s = n * DROPPER_SPACING;
+      const d = s - trackS;
+      if (d > far || d >= MAXD) break;
+      const factor = factorAt ? factorAt(s) : 1;
+      if (factor < 0.015) continue;
+      const lat = latAt(s);
+      worldSegment(d, lat, CONTACT_WIRE_H, d, lat, messengerHeightAt(s),
+                   'rgb(115,140,170)', 0.55, alpha * factor * fade(d, 560));
+    }
   }
 
   function drawSleepers(center, range) {
@@ -699,8 +738,12 @@ html.screensaver .hud { display: none; }
           worldVariableCurve(s => centerAt(s) + railOffset, 0.06, near, far, 1.7,
                              'rgb(185,205,235)', 1.15, route.alpha);
         }
-        worldVariableCurve(centerAt, 5.25, near, far, 2.5,
+        worldVariableCurve(centerAt, CONTACT_WIRE_H, near, far, 2.5,
                            'rgb(135,165,200)', 0.65, route.alpha * 0.65);
+        worldSpatialCurve(centerAt, messengerHeightAt, near, far, 2.0,
+                          'rgb(100,125,155)', 0.55, route.alpha * 0.42);
+        drawCatenaryDroppers(centerAt, near, far, route.alpha * 0.36,
+                             s => sidingFactor(s, stationIndex));
 
         for (let n = Math.ceil((trackS + near) / sleeperSpacing); ; n++) {
           const s = n * sleeperSpacing;
@@ -878,17 +921,25 @@ html.screensaver .hud { display: none; }
     drawVariableRow(14, s => rightMainCenterAt(s) + 1.55,
                     0.35, 0.045, C.refO, 0.30, 300);
 
-    // Contact wires create a strong cab-view vanishing point.
-    worldCurve(MAIN_TRACK_LEFT, 5.25, 3, MAXD - 1, 3, 'rgb(135,165,200)', 0.75, 0.34);
-    worldVariableCurve(rightMainCenterAt, 5.25, 3, MAXD - 1, 2.5,
+    // Simple catenary: level contact wires, sagging messenger wires, and
+    // regular droppers create a recognizable overhead-line profile.
+    worldCurve(MAIN_TRACK_LEFT, CONTACT_WIRE_H, 3, MAXD - 1, 3,
+               'rgb(135,165,200)', 0.75, 0.34);
+    worldVariableCurve(rightMainCenterAt, CONTACT_WIRE_H, 3, MAXD - 1, 2.5,
                        'rgb(135,165,200)', 0.65, 0.24);
-    const POLE = 44;
+    worldSpatialCurve(() => MAIN_TRACK_LEFT, messengerHeightAt, 3, MAXD - 1, 2.0,
+                      'rgb(100,125,155)', 0.60, 0.26);
+    worldSpatialCurve(rightMainCenterAt, messengerHeightAt, 3, MAXD - 1, 2.0,
+                      'rgb(100,125,155)', 0.55, 0.18);
+    drawCatenaryDroppers(() => MAIN_TRACK_LEFT, 3, MAXD - 1, 0.24);
+    drawCatenaryDroppers(rightMainCenterAt, 3, MAXD - 1, 0.17);
+
     const GANTRY_LEFT = -2.25, GANTRY_RIGHT = 6.35;
     const PASSING_GANTRY_LEFT = SIDING_LEFT - 2.25;
     const PASSING_GANTRY_RIGHT = SIDING_RIGHT + 2.25;
     const ISLAND_GANTRY_RIGHT = ISLAND_RIGHT_TRACK + 2.25;
-    for (let n = Math.ceil((trackS + 1) / POLE); ; n++) {
-      const s = n * POLE;
+    for (let n = Math.ceil((trackS + 1) / CATENARY_SPAN); ; n++) {
+      const s = n * CATENARY_SPAN;
       const d = s - trackS;
       if (d >= MAXD) break;
       const a = 0.42 * fade(d, 560);
@@ -908,11 +959,15 @@ html.screensaver .hud { display: none; }
       worldSegment(d, leftPole, 6.1, d, rightPole, 6.1, 'rgb(110,135,165)', 0.9, a * 0.85);
       worldSegment(d, leftPole, 5.45, d, leftPole + 0.72, 6.1, 'rgb(100,125,155)', 0.75, a * 0.72);
       worldSegment(d, rightPole, 5.45, d, rightPole - 0.72, 6.1, 'rgb(100,125,155)', 0.75, a * 0.72);
-      worldSegment(d, MAIN_TRACK_LEFT, 6.1, d, MAIN_TRACK_LEFT, 5.25, 'rgb(135,155,180)', 0.7, a);
-      worldSegment(d, rightMainCenter, 6.1, d, rightMainCenter, 5.25, 'rgb(135,155,180)', 0.7, a);
+      worldSegment(d, MAIN_TRACK_LEFT, 6.1, d, MAIN_TRACK_LEFT, MESSENGER_SUPPORT_H,
+                   'rgb(135,155,180)', 0.7, a);
+      worldSegment(d, rightMainCenter, 6.1, d, rightMainCenter, MESSENGER_SUPPORT_H,
+                   'rgb(135,155,180)', 0.7, a);
       if (passing > 0.015) {
-        worldSegment(d, leftSidingCenter, 6.1, d, leftSidingCenter, 5.25, 'rgb(135,155,180)', 0.65, a * passing);
-        worldSegment(d, rightSidingCenter, 6.1, d, rightSidingCenter, 5.25, 'rgb(135,155,180)', 0.65, a * passing);
+        worldSegment(d, leftSidingCenter, 6.1, d, leftSidingCenter, MESSENGER_SUPPORT_H,
+                     'rgb(135,155,180)', 0.65, a * passing);
+        worldSegment(d, rightSidingCenter, 6.1, d, rightSidingCenter, MESSENGER_SUPPORT_H,
+                     'rgb(135,155,180)', 0.65, a * passing);
       }
       if (project(d, leftPole, 5.7)) glow(P.x, P.y, 0.045 * P.sc, C.cyan, 0.44 * fade(d, 500));
       if (project(d, rightPole, 5.7)) glow(P.x, P.y, 0.045 * P.sc, C.cyan, 0.32 * fade(d, 500));
