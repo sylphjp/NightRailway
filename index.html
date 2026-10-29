@@ -537,6 +537,7 @@ html.screensaver .hud { display: none; }
   const CONTACT_WIRE_H = 5.25;
   const MESSENGER_SUPPORT_H = 5.85;
   const MESSENGER_SAG = 0.28;
+  const CONTACT_STAGGER = 0.20;
   const HOME_SIGNAL_MARGIN = 20;
   const HOME_MAIN_LAT = -1.9;
   const HOME_SIDING_LAT = -2.75;
@@ -605,6 +606,13 @@ html.screensaver .hud { display: none; }
   function messengerHeightAt(s) {
     const phase = positiveMod(s, CATENARY_SPAN) / CATENARY_SPAN;
     return MESSENGER_SUPPORT_H - MESSENGER_SAG * 4 * phase * (1 - phase);
+  }
+
+  function catenaryStaggerAt(s) {
+    const spanIndex = Math.floor(s / CATENARY_SPAN);
+    const phase = positiveMod(s, CATENARY_SPAN) / CATENARY_SPAN;
+    const supportOffset = positiveMod(spanIndex, 2) === 0 ? -CONTACT_STAGGER : CONTACT_STAGGER;
+    return supportOffset * (1 - 2 * phase);
   }
 
   function worldSegment(d1, lat1, h1, d2, lat2, h2, color, width, alpha) {
@@ -734,15 +742,16 @@ html.screensaver .hud { display: none; }
 
       for (const route of routes) {
         const centerAt = s => sidingCenter(s, route.main, route.outer, stationIndex);
+        const catenaryAt = s => centerAt(s) + catenaryStaggerAt(s);
         for (const railOffset of [-RAIL_HALF_GAUGE, RAIL_HALF_GAUGE]) {
           worldVariableCurve(s => centerAt(s) + railOffset, 0.06, near, far, 1.7,
                              'rgb(185,205,235)', 1.15, route.alpha);
         }
-        worldVariableCurve(centerAt, CONTACT_WIRE_H, near, far, 2.5,
+        worldVariableCurve(catenaryAt, CONTACT_WIRE_H, near, far, 2.5,
                            'rgb(135,165,200)', 0.65, route.alpha * 0.65);
-        worldSpatialCurve(centerAt, messengerHeightAt, near, far, 2.0,
+        worldSpatialCurve(catenaryAt, messengerHeightAt, near, far, 2.0,
                           'rgb(100,125,155)', 0.55, route.alpha * 0.42);
-        drawCatenaryDroppers(centerAt, near, far, route.alpha * 0.36,
+        drawCatenaryDroppers(catenaryAt, near, far, route.alpha * 0.36,
                              s => sidingFactor(s, stationIndex));
 
         for (let n = Math.ceil((trackS + near) / sleeperSpacing); ; n++) {
@@ -923,16 +932,18 @@ html.screensaver .hud { display: none; }
 
     // Simple catenary: level contact wires, sagging messenger wires, and
     // regular droppers create a recognizable overhead-line profile.
-    worldCurve(MAIN_TRACK_LEFT, CONTACT_WIRE_H, 3, MAXD - 1, 3,
-               'rgb(135,165,200)', 0.75, 0.34);
-    worldVariableCurve(rightMainCenterAt, CONTACT_WIRE_H, 3, MAXD - 1, 2.5,
+    const leftCatenaryAt = s => MAIN_TRACK_LEFT + catenaryStaggerAt(s);
+    const rightCatenaryAt = s => rightMainCenterAt(s) + catenaryStaggerAt(s);
+    worldVariableCurve(leftCatenaryAt, CONTACT_WIRE_H, 3, MAXD - 1, 2.5,
+                       'rgb(135,165,200)', 0.75, 0.34);
+    worldVariableCurve(rightCatenaryAt, CONTACT_WIRE_H, 3, MAXD - 1, 2.5,
                        'rgb(135,165,200)', 0.65, 0.24);
-    worldSpatialCurve(() => MAIN_TRACK_LEFT, messengerHeightAt, 3, MAXD - 1, 2.0,
+    worldSpatialCurve(leftCatenaryAt, messengerHeightAt, 3, MAXD - 1, 2.0,
                       'rgb(100,125,155)', 0.60, 0.26);
-    worldSpatialCurve(rightMainCenterAt, messengerHeightAt, 3, MAXD - 1, 2.0,
+    worldSpatialCurve(rightCatenaryAt, messengerHeightAt, 3, MAXD - 1, 2.0,
                       'rgb(100,125,155)', 0.55, 0.18);
-    drawCatenaryDroppers(() => MAIN_TRACK_LEFT, 3, MAXD - 1, 0.24);
-    drawCatenaryDroppers(rightMainCenterAt, 3, MAXD - 1, 0.17);
+    drawCatenaryDroppers(leftCatenaryAt, 3, MAXD - 1, 0.24);
+    drawCatenaryDroppers(rightCatenaryAt, 3, MAXD - 1, 0.17);
 
     const GANTRY_LEFT = -2.25, GANTRY_RIGHT = 6.35;
     const PASSING_GANTRY_LEFT = SIDING_LEFT - 2.25;
@@ -952,6 +963,11 @@ html.screensaver .hud { display: none; }
       const leftSidingCenter = MAIN_TRACK_LEFT + (SIDING_LEFT - MAIN_TRACK_LEFT) * passing;
       const rightSidingCenter = MAIN_TRACK_RIGHT + (SIDING_RIGHT - MAIN_TRACK_RIGHT) * passing;
       const rightMainCenter = rightMainCenterAt(s);
+      const stagger = catenaryStaggerAt(s);
+      const leftContact = MAIN_TRACK_LEFT + stagger;
+      const rightContact = rightMainCenter + stagger;
+      const leftSidingContact = leftSidingCenter + stagger;
+      const rightSidingContact = rightSidingCenter + stagger;
 
       // Portal gantries widen with passing sidings or the displaced island track.
       worldSegment(d, leftPole, 0.1, d, leftPole, 6.4, 'rgb(110,135,165)', 1.0, a);
@@ -959,14 +975,14 @@ html.screensaver .hud { display: none; }
       worldSegment(d, leftPole, 6.1, d, rightPole, 6.1, 'rgb(110,135,165)', 0.9, a * 0.85);
       worldSegment(d, leftPole, 5.45, d, leftPole + 0.72, 6.1, 'rgb(100,125,155)', 0.75, a * 0.72);
       worldSegment(d, rightPole, 5.45, d, rightPole - 0.72, 6.1, 'rgb(100,125,155)', 0.75, a * 0.72);
-      worldSegment(d, MAIN_TRACK_LEFT, 6.1, d, MAIN_TRACK_LEFT, MESSENGER_SUPPORT_H,
+      worldSegment(d, leftContact, 6.1, d, leftContact, MESSENGER_SUPPORT_H,
                    'rgb(135,155,180)', 0.7, a);
-      worldSegment(d, rightMainCenter, 6.1, d, rightMainCenter, MESSENGER_SUPPORT_H,
+      worldSegment(d, rightContact, 6.1, d, rightContact, MESSENGER_SUPPORT_H,
                    'rgb(135,155,180)', 0.7, a);
       if (passing > 0.015) {
-        worldSegment(d, leftSidingCenter, 6.1, d, leftSidingCenter, MESSENGER_SUPPORT_H,
+        worldSegment(d, leftSidingContact, 6.1, d, leftSidingContact, MESSENGER_SUPPORT_H,
                      'rgb(135,155,180)', 0.65, a * passing);
-        worldSegment(d, rightSidingCenter, 6.1, d, rightSidingCenter, MESSENGER_SUPPORT_H,
+        worldSegment(d, rightSidingContact, 6.1, d, rightSidingContact, MESSENGER_SUPPORT_H,
                      'rgb(135,155,180)', 0.65, a * passing);
       }
       if (project(d, leftPole, 5.7)) glow(P.x, P.y, 0.045 * P.sc, C.cyan, 0.44 * fade(d, 500));
