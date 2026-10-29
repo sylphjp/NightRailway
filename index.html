@@ -529,6 +529,9 @@ html.screensaver .hud { display: none; }
   const STATION_END = 455;
   const STATION_TYPE_COUNT = 3;
   const TURNOUT_LENGTH = 180;
+  const HOME_SIGNAL_MARGIN = 20;
+  const HOME_MAIN_LAT = -1.9;
+  const HOME_SIDING_LAT = -2.75;
   const SIDING_LEFT = -5.9;
   const SIDING_RIGHT = 10.0;
   const ISLAND_RIGHT_TRACK = 8.1;
@@ -543,6 +546,19 @@ html.screensaver .hud { display: none; }
   const positiveMod = (n, m) => ((n % m) + m) % m;
   const isPassingStation = index => positiveMod(index, STATION_TYPE_COUNT) === 1;
   const isIslandStation = index => positiveMod(index, STATION_TYPE_COUNT) === 2;
+
+  function homeSignalS(stationIndex) {
+    return stationIndex * STATION_CYCLE + STATION_START - TURNOUT_LENGTH - HOME_SIGNAL_MARGIN;
+  }
+
+  function isNearPassingHomeSignal(s, radius = 80) {
+    const nearestIndex = Math.floor(s / STATION_CYCLE);
+    for (let stationIndex = nearestIndex - 1; stationIndex <= nearestIndex + 1; stationIndex++) {
+      if (isPassingStation(stationIndex) && Math.abs(s - homeSignalS(stationIndex)) < radius)
+        return true;
+    }
+    return false;
+  }
 
   function stationShapeFactor(s, stationIndex, matchesType) {
     if (!matchesType(stationIndex)) return 0;
@@ -754,6 +770,54 @@ html.screensaver .hud { display: none; }
       glow(P.x, P.y, 0.105 * P.sc, C.signalG, 0.96 * a);
   }
 
+  function drawSidingHomeSignal(d, lat) {
+    // The siding route is a lower three-lamp head held permanently at stop.
+    // Lens and glow sizes match the adjacent main-route signal.
+    const headScale = 0.75;
+    const headCenter = 3.55;
+    const lamps = [0.40, 0, -0.40].map(offset => headCenter + offset * headScale);
+    const a = fade(d, 560);
+
+    worldSegment(d, lat, 0.1, d, lat, 4.35, 'rgb(125,145,165)', Math.max(0.7, P.sc * 0.025), 0.48 * fade(d, 520));
+    worldSegment(d, lat - 0.30, 4.30, d, lat + 0.30, 4.30, 'rgb(145,165,185)', 1, 0.42 * fade(d, 520));
+
+    ctx.globalCompositeOperation = 'source-over';
+    if (project(d, lat, headCenter)) {
+      const sc = P.sc;
+      const w = Math.max(1.4, 0.42 * headScale * sc);
+      const h = Math.max(3.5, 1.20 * headScale * sc);
+      ctx.globalAlpha = 0.82 * a;
+      ctx.fillStyle = 'rgb(9,14,18)';
+      ctx.beginPath();
+      ctx.roundRect(P.x - w / 2, P.y - h / 2, w, h, Math.min(w / 2, 0.18 * sc));
+      ctx.fill();
+    }
+    for (const h of lamps) {
+      if (!project(d, lat, h)) continue;
+      ctx.globalAlpha = 0.72 * a;
+      ctx.fillStyle = 'rgb(34,43,47)';
+      ctx.beginPath();
+      ctx.arc(P.x, P.y, Math.max(0.45, 0.08 * P.sc), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'lighter';
+
+    if (project(d, lat, lamps[2]))
+      glow(P.x, P.y, 0.105 * P.sc, C.red, 0.96 * a);
+  }
+
+  function drawPassingHomeSignals() {
+    const firstIndex = Math.floor(trackS / STATION_CYCLE) - 1;
+    const lastIndex = Math.floor((trackS + MAXD) / STATION_CYCLE) + 1;
+    for (let stationIndex = firstIndex; stationIndex <= lastIndex; stationIndex++) {
+      if (!isPassingStation(stationIndex)) continue;
+      const d = homeSignalS(stationIndex) - trackS;
+      if (d <= 1 || d >= MAXD) continue;
+      drawSignal(stationIndex * 101 + 17, d, HOME_MAIN_LAT);
+      drawSidingHomeSignal(d, HOME_SIDING_LAT);
+    }
+  }
+
   function drawStation() {
     const base = Math.floor(trackS / STATION_CYCLE) * STATION_CYCLE;
     for (let b = base - STATION_CYCLE; b <= trackS + MAXD; b += STATION_CYCLE) {
@@ -853,10 +917,14 @@ html.screensaver .hud { display: none; }
     // Keep the nearest signal until it actually reaches the cab. Starting the
     // sequence at +28 m made it vanish noticeably before the viewpoint.
     for (let n = Math.ceil((trackS + 1) / SIGNAL); ; n++) {
-      const d = n * SIGNAL - trackS;
+      const s = n * SIGNAL;
+      const d = s - trackS;
       if (d >= MAXD) break;
-      drawSignal(n, d, -1.9);
+      // Only a block signal that would overlap the new paired home signal is
+      // omitted; every other signal remains unchanged.
+      if (!isNearPassingHomeSignal(s)) drawSignal(n, d, HOME_MAIN_LAT);
     }
+    drawPassingHomeSignals();
     drawStation();
   }
 
