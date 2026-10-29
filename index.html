@@ -537,6 +537,8 @@ html.screensaver .hud { display: none; }
   const CONTACT_WIRE_H = 5.25;
   const MESSENGER_SUPPORT_H = 5.85;
   const MESSENGER_SAG = 0.28;
+  const GANTRY_LOWER_CHORD_H = 6.05;
+  const GANTRY_UPPER_CHORD_H = 6.55;
   const HOME_SIGNAL_MARGIN = 20;
   const HOME_MAIN_LAT = -1.9;
   const HOME_SIDING_LAT = -2.75;
@@ -616,6 +618,28 @@ html.screensaver .hud { display: none; }
     ctx.lineWidth = width;
     ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(P.x, P.y); ctx.stroke();
+  }
+
+  function drawGantryTruss(d, left, right, alpha) {
+    const color = 'rgb(110,135,165)';
+    worldSegment(d, left, GANTRY_LOWER_CHORD_H, d, right, GANTRY_LOWER_CHORD_H,
+                 color, 0.82, alpha * 0.88);
+    worldSegment(d, left, GANTRY_UPPER_CHORD_H, d, right, GANTRY_UPPER_CHORD_H,
+                 color, 0.78, alpha * 0.82);
+
+    const panels = Math.max(4, Math.ceil((right - left) / 1.45));
+    const panelWidth = (right - left) / panels;
+    for (let panel = 0; panel < panels; panel++) {
+      const lat1 = left + panel * panelWidth;
+      const lat2 = lat1 + panelWidth;
+      const h1 = panel % 2 === 0 ? GANTRY_LOWER_CHORD_H : GANTRY_UPPER_CHORD_H;
+      const h2 = panel % 2 === 0 ? GANTRY_UPPER_CHORD_H : GANTRY_LOWER_CHORD_H;
+      worldSegment(d, lat1, h1, d, lat2, h2, color, 0.62, alpha * 0.76);
+    }
+    worldSegment(d, left, GANTRY_LOWER_CHORD_H, d, left, GANTRY_UPPER_CHORD_H,
+                 color, 0.62, alpha * 0.72);
+    worldSegment(d, right, GANTRY_LOWER_CHORD_H, d, right, GANTRY_UPPER_CHORD_H,
+                 color, 0.62, alpha * 0.72);
   }
 
   function worldCurve(lat, h, near, far, step, color, width, alpha) {
@@ -954,19 +978,25 @@ html.screensaver .hud { display: none; }
       const rightMainCenter = rightMainCenterAt(s);
 
       // Portal gantries widen with passing sidings or the displaced island track.
-      worldSegment(d, leftPole, 0.1, d, leftPole, 6.4, 'rgb(110,135,165)', 1.0, a);
-      worldSegment(d, rightPole, 0.1, d, rightPole, 6.4, 'rgb(110,135,165)', 1.0, a);
-      worldSegment(d, leftPole, 6.1, d, rightPole, 6.1, 'rgb(110,135,165)', 0.9, a * 0.85);
-      worldSegment(d, leftPole, 5.45, d, leftPole + 0.72, 6.1, 'rgb(100,125,155)', 0.75, a * 0.72);
-      worldSegment(d, rightPole, 5.45, d, rightPole - 0.72, 6.1, 'rgb(100,125,155)', 0.75, a * 0.72);
-      worldSegment(d, MAIN_TRACK_LEFT, 6.1, d, MAIN_TRACK_LEFT, MESSENGER_SUPPORT_H,
+      worldSegment(d, leftPole, 0.1, d, leftPole, 6.70, 'rgb(110,135,165)', 1.0, a);
+      worldSegment(d, rightPole, 0.1, d, rightPole, 6.70, 'rgb(110,135,165)', 1.0, a);
+      drawGantryTruss(d, leftPole, rightPole, a);
+      worldSegment(d, leftPole, 5.45, d, leftPole + 0.72, GANTRY_LOWER_CHORD_H,
+                   'rgb(100,125,155)', 0.75, a * 0.72);
+      worldSegment(d, rightPole, 5.45, d, rightPole - 0.72, GANTRY_LOWER_CHORD_H,
+                   'rgb(100,125,155)', 0.75, a * 0.72);
+      worldSegment(d, MAIN_TRACK_LEFT, GANTRY_LOWER_CHORD_H,
+                   d, MAIN_TRACK_LEFT, MESSENGER_SUPPORT_H,
                    'rgb(135,155,180)', 0.7, a);
-      worldSegment(d, rightMainCenter, 6.1, d, rightMainCenter, MESSENGER_SUPPORT_H,
+      worldSegment(d, rightMainCenter, GANTRY_LOWER_CHORD_H,
+                   d, rightMainCenter, MESSENGER_SUPPORT_H,
                    'rgb(135,155,180)', 0.7, a);
       if (passing > 0.015) {
-        worldSegment(d, leftSidingCenter, 6.1, d, leftSidingCenter, MESSENGER_SUPPORT_H,
+        worldSegment(d, leftSidingCenter, GANTRY_LOWER_CHORD_H,
+                     d, leftSidingCenter, MESSENGER_SUPPORT_H,
                      'rgb(135,155,180)', 0.65, a * passing);
-        worldSegment(d, rightSidingCenter, 6.1, d, rightSidingCenter, MESSENGER_SUPPORT_H,
+        worldSegment(d, rightSidingCenter, GANTRY_LOWER_CHORD_H,
+                     d, rightSidingCenter, MESSENGER_SUPPORT_H,
                      'rgb(135,155,180)', 0.65, a * passing);
       }
       if (project(d, leftPole, 5.7)) glow(P.x, P.y, 0.045 * P.sc, C.cyan, 0.44 * fade(d, 500));
