@@ -518,26 +518,31 @@ html.screensaver .hud { display: none; }
   const MAIN_TRACK_LEFT = 0;
   const MAIN_TRACK_RIGHT = 4.1;
 
-  // Station family. Every third station is a two-platform, four-track
-  // passing station. Its sidings branch away outside the existing platforms,
-  // so the two main tracks never move and the original layout stays intact.
+  // Three station types repeat in order: the original side platforms, a
+  // four-track passing station, and a center island platform. Passing-station
+  // sidings branch outward; island stations move only the opposing main track.
   const STATION_CYCLE = 1350;
   const STATION_START = 260;
   const STATION_END = 455;
-  const PASSING_STATION_INTERVAL = 3;
+  const STATION_TYPE_COUNT = 3;
   const TURNOUT_LENGTH = 180;
   const SIDING_LEFT = -5.9;
   const SIDING_RIGHT = 10.0;
+  const ISLAND_RIGHT_TRACK = 8.1;
   const PLATFORMS = [
     { edge: -2.25, outer: -3.65, post: -3.35, lamp: -3.30, edgeLight: -2.18, outerLight: -3.72 },
     { edge:  6.35, outer:  7.75, post:  7.45, lamp:  7.40, edgeLight:  6.28, outerLight:  7.82 },
   ];
+  const ISLAND_PLATFORM = {
+    edge: 2.25, outer: 5.85, post: 4.05, lamp: 4.05, edgeLight: 2.18, outerLight: 5.92,
+  };
 
   const positiveMod = (n, m) => ((n % m) + m) % m;
-  const isPassingStation = index => positiveMod(index, PASSING_STATION_INTERVAL) === 1;
+  const isPassingStation = index => positiveMod(index, STATION_TYPE_COUNT) === 1;
+  const isIslandStation = index => positiveMod(index, STATION_TYPE_COUNT) === 2;
 
-  function sidingFactor(s, stationIndex) {
-    if (!isPassingStation(stationIndex)) return 0;
+  function stationShapeFactor(s, stationIndex, matchesType) {
+    if (!matchesType(stationIndex)) return 0;
     const base = stationIndex * STATION_CYCLE;
     const platformStart = base + STATION_START;
     const platformEnd = base + STATION_END;
@@ -549,9 +554,21 @@ html.screensaver .hud { display: none; }
     return smooth((turnoutEnd - s) / TURNOUT_LENGTH);
   }
 
+  const sidingFactor = (s, stationIndex) => stationShapeFactor(s, stationIndex, isPassingStation);
+  const islandFactor = (s, stationIndex) => stationShapeFactor(s, stationIndex, isIslandStation);
+
   function passingFactorAt(s) {
     const index = Math.floor(s / STATION_CYCLE);
     return sidingFactor(s, index);
+  }
+
+  function islandFactorAt(s) {
+    const index = Math.floor(s / STATION_CYCLE);
+    return islandFactor(s, index);
+  }
+
+  function rightMainCenterAt(s) {
+    return MAIN_TRACK_RIGHT + (ISLAND_RIGHT_TRACK - MAIN_TRACK_RIGHT) * islandFactorAt(s);
   }
 
   function sidingCenter(s, mainCenter, outerCenter, stationIndex) {
@@ -607,6 +624,30 @@ html.screensaver .hud { display: none; }
       const a = 0.20 + 0.38 * fade(d, range);
       worldSegment(d, center - SLEEPER_HALF_WIDTH, 0.025, d, center + SLEEPER_HALF_WIDTH, 0.025,
                    'rgb(155,165,185)', Math.max(0.45, 1.5 * FOCAL / d / 35), a);
+    }
+  }
+
+  function drawVariableSleepers(centerAt, range) {
+    const spacing = 0.78;
+    for (let n = Math.ceil((trackS + 2) / spacing); ; n++) {
+      const s = n * spacing;
+      const d = s - trackS;
+      if (d > range) break;
+      const center = centerAt(s);
+      const a = 0.20 + 0.38 * fade(d, range);
+      worldSegment(d, center - SLEEPER_HALF_WIDTH, 0.025,
+                   d, center + SLEEPER_HALF_WIDTH, 0.025,
+                   'rgb(155,165,185)', Math.max(0.45, 1.5 * FOCAL / d / 35), a);
+    }
+  }
+
+  function drawVariableRow(spacing, latAt, h, rad, col, inten, range) {
+    for (let n = Math.ceil((trackS + 1) / spacing); ; n++) {
+      const s = n * spacing;
+      const d = s - trackS;
+      if (d > range || d >= MAXD) break;
+      if (!project(d, latAt(s), h)) continue;
+      glow(P.x, P.y, rad * P.sc, col, inten * fade(d, range));
     }
   }
 
@@ -715,13 +756,17 @@ html.screensaver .hud { display: none; }
     for (let b = base - STATION_CYCLE; b <= trackS + MAXD; b += STATION_CYCLE) {
       const stationIndex = Math.round(b / STATION_CYCLE);
       const passing = isPassingStation(stationIndex);
+      const island = isIslandStation(stationIndex);
+      const stationPlatforms = island ? [ISLAND_PLATFORM] : PLATFORMS;
+      const doubleSided = passing || island;
       const ds = b + STATION_START - trackS, de = b + STATION_END - trackS;
       if (de < 2 || ds > MAXD) continue;
       const near = Math.max(2, ds), far = Math.min(MAXD - 1, de);
-      for (const platform of PLATFORMS) {
+      for (const platform of stationPlatforms) {
         worldCurve(platform.edge, 0.62, near, far, 3, 'rgb(200,205,215)', 1.3, 0.36);
         worldCurve(platform.outer, 0.62, near, far, 3,
-                   passing ? 'rgb(190,200,215)' : 'rgb(110,125,150)', passing ? 1.25 : 1.0, passing ? 0.34 : 0.22);
+                   doubleSided ? 'rgb(190,200,215)' : 'rgb(110,125,150)',
+                   doubleSided ? 1.25 : 1.0, doubleSided ? 0.34 : 0.22);
         worldCurve(platform.post, 3.42, near, far, 4, 'rgb(100,120,145)', 0.7, 0.18);
         for (let s = Math.ceil((trackS + near) / 7) * 7; s < trackS + far; s += 7) {
           const d = s - trackS;
@@ -731,7 +776,7 @@ html.screensaver .hud { display: none; }
             glow(P.x, P.y, 0.16 * P.sc, C.white, 0.75 * fade(d, 520));
           if (project(d, platform.edgeLight, 0.72))
             glow(P.x, P.y, 0.045 * P.sc, C.cyan, 0.65 * fade(d, 420));
-          if (passing && project(d, platform.outerLight, 0.72))
+          if (doubleSided && project(d, platform.outerLight, 0.72))
             glow(P.x, P.y, 0.045 * P.sc, C.cyan, 0.52 * fade(d, 420));
         }
       }
@@ -743,45 +788,56 @@ html.screensaver .hud { display: none; }
     groundPool(15, 0, 4.2, '205,225,255', 0.045);
     groundPool(34, 0, 6.0, '205,225,255', 0.022);
 
-    // Two tracks: our line and the opposing line to the right.
-    for (const center of [MAIN_TRACK_LEFT, MAIN_TRACK_RIGHT]) {
-      worldCurve(center - RAIL_HALF_GAUGE, 0.06, 2, MAXD - 1, 2.5, 'rgb(185,205,235)', 1.15, center === 0 ? 0.64 : 0.36);
-      worldCurve(center + RAIL_HALF_GAUGE, 0.06, 2, MAXD - 1, 2.5, 'rgb(185,205,235)', 1.15, center === 0 ? 0.64 : 0.36);
-      drawRow(2.2, 0, 0, center - RAIL_HALF_GAUGE, 0.08, 0.035, C.refW, center === 0 ? 0.72 : 0.36, 220);
-      drawRow(2.2, 0, 0, center + RAIL_HALF_GAUGE, 0.08, 0.035, C.refW, center === 0 ? 0.72 : 0.36, 220);
+    // Our main track stays fixed. The opposing main track moves outward only
+    // through island-platform stations, leaving room for the center platform.
+    for (const railOffset of [-RAIL_HALF_GAUGE, RAIL_HALF_GAUGE]) {
+      worldCurve(MAIN_TRACK_LEFT + railOffset, 0.06, 2, MAXD - 1, 2.5,
+                 'rgb(185,205,235)', 1.15, 0.64);
+      drawRow(2.2, 0, 0, MAIN_TRACK_LEFT + railOffset, 0.08, 0.035, C.refW, 0.72, 220);
+      worldVariableCurve(s => rightMainCenterAt(s) + railOffset, 0.06, 2, MAXD - 1, 2.0,
+                         'rgb(185,205,235)', 1.15, 0.36);
+      drawVariableRow(2.2, s => rightMainCenterAt(s) + railOffset,
+                      0.08, 0.035, C.refW, 0.36, 220);
     }
     drawPassingStationTracks();
     drawSleepers(MAIN_TRACK_LEFT, 145);
-    drawSleepers(MAIN_TRACK_RIGHT, 105);
+    drawVariableSleepers(rightMainCenterAt, 105);
     drawRow(14, 0, 0, -1.55, 0.35, 0.045, C.refW, 0.48, 360);
-    drawRow(14, 0, 0, 5.65, 0.35, 0.045, C.refO, 0.30, 300);
+    drawVariableRow(14, s => rightMainCenterAt(s) + 1.55,
+                    0.35, 0.045, C.refO, 0.30, 300);
 
     // Contact wires create a strong cab-view vanishing point.
     worldCurve(MAIN_TRACK_LEFT, 5.25, 3, MAXD - 1, 3, 'rgb(135,165,200)', 0.75, 0.34);
-    worldCurve(MAIN_TRACK_RIGHT, 5.25, 3, MAXD - 1, 3, 'rgb(135,165,200)', 0.65, 0.24);
+    worldVariableCurve(rightMainCenterAt, 5.25, 3, MAXD - 1, 2.5,
+                       'rgb(135,165,200)', 0.65, 0.24);
     const POLE = 44;
     const GANTRY_LEFT = -2.25, GANTRY_RIGHT = 6.35;
     const PASSING_GANTRY_LEFT = SIDING_LEFT - 2.25;
     const PASSING_GANTRY_RIGHT = SIDING_RIGHT + 2.25;
+    const ISLAND_GANTRY_RIGHT = ISLAND_RIGHT_TRACK + 2.25;
     for (let n = Math.ceil((trackS + 1) / POLE); ; n++) {
       const s = n * POLE;
       const d = s - trackS;
       if (d >= MAXD) break;
       const a = 0.42 * fade(d, 560);
       const passing = passingFactorAt(s);
+      const island = islandFactorAt(s);
       const leftPole = GANTRY_LEFT + (PASSING_GANTRY_LEFT - GANTRY_LEFT) * passing;
-      const rightPole = GANTRY_RIGHT + (PASSING_GANTRY_RIGHT - GANTRY_RIGHT) * passing;
+      const rightPole = GANTRY_RIGHT
+        + (PASSING_GANTRY_RIGHT - GANTRY_RIGHT) * passing
+        + (ISLAND_GANTRY_RIGHT - GANTRY_RIGHT) * island;
       const leftSidingCenter = MAIN_TRACK_LEFT + (SIDING_LEFT - MAIN_TRACK_LEFT) * passing;
       const rightSidingCenter = MAIN_TRACK_RIGHT + (SIDING_RIGHT - MAIN_TRACK_RIGHT) * passing;
+      const rightMainCenter = rightMainCenterAt(s);
 
-      // Portal gantries widen with the sidings through passing stations.
+      // Portal gantries widen with passing sidings or the displaced island track.
       worldSegment(d, leftPole, 0.1, d, leftPole, 6.4, 'rgb(110,135,165)', 1.0, a);
       worldSegment(d, rightPole, 0.1, d, rightPole, 6.4, 'rgb(110,135,165)', 1.0, a);
       worldSegment(d, leftPole, 6.1, d, rightPole, 6.1, 'rgb(110,135,165)', 0.9, a * 0.85);
       worldSegment(d, leftPole, 5.45, d, leftPole + 0.72, 6.1, 'rgb(100,125,155)', 0.75, a * 0.72);
       worldSegment(d, rightPole, 5.45, d, rightPole - 0.72, 6.1, 'rgb(100,125,155)', 0.75, a * 0.72);
       worldSegment(d, MAIN_TRACK_LEFT, 6.1, d, MAIN_TRACK_LEFT, 5.25, 'rgb(135,155,180)', 0.7, a);
-      worldSegment(d, MAIN_TRACK_RIGHT, 6.1, d, MAIN_TRACK_RIGHT, 5.25, 'rgb(135,155,180)', 0.7, a);
+      worldSegment(d, rightMainCenter, 6.1, d, rightMainCenter, 5.25, 'rgb(135,155,180)', 0.7, a);
       if (passing > 0.015) {
         worldSegment(d, leftSidingCenter, 6.1, d, leftSidingCenter, 5.25, 'rgb(135,155,180)', 0.65, a * passing);
         worldSegment(d, rightSidingCenter, 6.1, d, rightSidingCenter, 5.25, 'rgb(135,155,180)', 0.65, a * passing);
@@ -820,19 +876,21 @@ html.screensaver .hud { display: none; }
     }
   }
 
-  function drawTrainWindows(d, center, cars, intensity) {
+  function drawTrainWindows(d, centerAt, cars, intensity) {
     for (let car = 0; car < cars; car++) {
       const dc = d + car * 19;
       if (dc < 2 || dc >= MAXD) continue;
       for (const along of [-5.5, -2.5, 0.5, 3.5, 6.5]) {
         const dw = dc + along;
         if (dw < 2 || dw >= MAXD) continue;
+        const center = centerAt(trackS + dw);
         for (const edge of [-0.88, 0.88]) {
           if (project(dw, center + edge, 1.75))
             glow(P.x, P.y, 0.055 * P.sc, C.cyan, intensity * fade(dw, MAXD));
         }
       }
-      if (project(dc, center, 3.15)) glow(P.x, P.y, 0.035 * P.sc, C.white, 0.22 * intensity * fade(dc, MAXD));
+      if (project(dc, centerAt(trackS + dc), 3.15))
+        glow(P.x, P.y, 0.035 * P.sc, C.white, 0.22 * intensity * fade(dc, MAXD));
     }
   }
 
@@ -843,8 +901,8 @@ html.screensaver .hud { display: none; }
       // An opposing train's nose passes first. Keep drawing the carriages
       // until the back of the last car has also gone behind the cab.
       if (tailD < 2 || d >= MAXD) continue;
-      const center = 4.1;
-      drawTrainWindows(d + 8, center, t.cars, 0.58);
+      const center = rightMainCenterAt(t.s);
+      drawTrainWindows(d + 8, rightMainCenterAt, t.cars, 0.58);
       if (d >= 2) {
         for (const k of [-1, 1]) {
           if (project(d, center + 0.58 * k, 1.25)) glow(P.x, P.y, 0.16 * P.sc, C.head, 1.0 * fade(d, MAXD));
@@ -855,11 +913,12 @@ html.screensaver .hud { display: none; }
       } else {
         // Once the nose has passed the cab, the rear face becomes visible.
         const rearD = d + t.cars * 19 - 1.5;
+        const rearCenter = rightMainCenterAt(trackS + rearD);
         for (const k of [-1, 1]) {
-          if (project(rearD, center + 0.52 * k, 1.18))
+          if (project(rearD, rearCenter + 0.52 * k, 1.18))
             glow(P.x, P.y, 0.11 * P.sc, C.tail, 0.95 * fade(rearD, 600));
         }
-        if (project(rearD, center, 2.45))
+        if (project(rearD, rearCenter, 2.45))
           glow(P.x, P.y, 0.045 * P.sc, C.red, 0.42 * fade(rearD, 500));
       }
     }
