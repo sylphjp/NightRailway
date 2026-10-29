@@ -530,6 +530,7 @@ html.screensaver .hud { display: none; }
   const STATION_TYPE_COUNT = 3;
   const TURNOUT_LENGTH = 180;
   const BLOCK_SIGNAL_SPACING = 235;
+  const STOPPED_TRAIN_PROBABILITY = 0.30;
   const HOME_SIGNAL_MARGIN = 20;
   const HOME_MAIN_LAT = -1.9;
   const HOME_SIDING_LAT = -2.75;
@@ -965,6 +966,53 @@ html.screensaver .hud { display: none; }
     }
   }
 
+  function drawStoppedTrain(stationIndex, mainCenter, sidingCenterLat, opposing, salt) {
+    if (rnd(stationIndex, salt) >= STOPPED_TRAIN_PROBABILITY) return;
+
+    const base = stationIndex * STATION_CYCLE;
+    const cars = 7 + Math.floor(rnd(stationIndex, salt + 1) * 3);
+    const trainS = base + STATION_START + 12;
+    const nearD = trainS - trackS;
+    const farD = trainS + cars * 19 - trackS;
+    if (farD < 2 || nearD >= MAXD) return;
+
+    const centerAt = s => sidingCenter(s, mainCenter, sidingCenterLat, stationIndex);
+    drawTrainWindows(nearD + 8, centerAt, cars, 0.50);
+
+    // The near end faces the cab: opposing trains show three white lamps,
+    // while trains in our direction show their red tail lamps.
+    if (nearD < 2 || nearD >= MAXD) return;
+    const center = centerAt(trainS);
+    const a = fade(nearD, MAXD);
+    if (opposing) {
+      for (const k of [-1, 1]) {
+        if (project(nearD, center + 0.58 * k, 1.25))
+          glow(P.x, P.y, 0.15 * P.sc, C.head, 0.92 * a);
+      }
+      if (project(nearD, center, 2.55))
+        glow(P.x, P.y, 0.070 * P.sc, C.head, 0.50 * a);
+    } else {
+      for (const k of [-1, 1]) {
+        if (project(nearD, center + 0.52 * k, 1.18))
+          glow(P.x, P.y, 0.105 * P.sc, C.tail, 0.92 * a);
+      }
+      if (project(nearD, center, 2.45))
+        glow(P.x, P.y, 0.043 * P.sc, C.red, 0.40 * a);
+    }
+  }
+
+  function drawStoppedTrains() {
+    const firstIndex = Math.floor((trackS - STATION_END) / STATION_CYCLE) - 1;
+    const lastIndex = Math.floor((trackS + MAXD) / STATION_CYCLE) + 1;
+    for (let stationIndex = firstIndex; stationIndex <= lastIndex; stationIndex++) {
+      if (!isPassingStation(stationIndex)) continue;
+      // Each direction is decided independently, so a station may contain no
+      // stopped train, one train, or trains on both outer sidings.
+      drawStoppedTrain(stationIndex, MAIN_TRACK_LEFT, SIDING_LEFT, false, 301);
+      drawStoppedTrain(stationIndex, MAIN_TRACK_RIGHT, SIDING_RIGHT, true, 303);
+    }
+  }
+
   function drawTrains() {
     for (const t of trains) {
       const d = t.s - trackS;
@@ -1119,6 +1167,7 @@ html.screensaver .hud { display: none; }
     drawMeteors();
     drawUfo();
     drawRailway();
+    drawStoppedTrains();
     drawTrains();
 
     const kmh = Math.round(speed * 3.6);
