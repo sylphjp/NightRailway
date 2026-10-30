@@ -563,6 +563,7 @@ html.screensaver .hud { display: none; }
   const HOME_SIGNAL_MARGIN = 20;
   const HOME_MAIN_LAT = -1.9;
   const HOME_SIDING_LAT = -2.75;
+  const SIGNAL_LEFT_OFFSET = HOME_MAIN_LAT - MAIN_TRACK_LEFT;
   const SIDING_LEFT = -5.9;
   const SIDING_RIGHT = 10.0;
   const ISLAND_RIGHT_TRACK = 8.1;
@@ -690,6 +691,8 @@ html.screensaver .hud { display: none; }
     const q = quadrupleFactorAt(s);
     return MAIN_TRACK_RIGHT + (rightOuterTargetCenterAt(s) - MAIN_TRACK_RIGHT) * q;
   }
+
+  const outerSignalLatAt = s => leftOuterCenterAt(s) + SIGNAL_LEFT_OFFSET;
 
   function sidingCenter(s, mainCenter, outerCenter, stationIndex) {
     return mainCenter + (outerCenter - mainCenter) * sidingFactor(s, stationIndex);
@@ -1030,6 +1033,9 @@ html.screensaver .hud { display: none; }
       if (d <= 1 || d >= MAXD) continue;
       drawSignal(stationIndex * 101 + 17, d, HOME_MAIN_LAT);
       drawSidingHomeSignal(d, HOME_SIDING_LAT);
+      const signalS = homeSignalS(stationIndex);
+      if (quadrupleFactorAt(signalS) > 0.98)
+        drawSignal(stationIndex * 101 + 41, d, outerSignalLatAt(signalS));
     }
   }
 
@@ -1227,7 +1233,14 @@ html.screensaver .hud { display: none; }
       if (d >= MAXD) break;
       // Reserve one complete block-signal interval on both sides of each
       // paired home signal; every signal outside that zone stays unchanged.
-      if (!isNearTerminalHomeSignal(s)) drawSignal(n, d, HOME_MAIN_LAT);
+      if (!isNearTerminalHomeSignal(s)) {
+        drawSignal(n, d, HOME_MAIN_LAT);
+        // The signal for our-direction outer line shares the same block
+        // boundary. Skip it inside a mode-change turnout so no mast sprouts
+        // from a line that has not finished diverging yet.
+        if (quadrupleFactorAt(s) > 0.98)
+          drawSignal(n + 100000, d, outerSignalLatAt(s));
+      }
     }
     drawTerminalHomeSignals();
     drawStation();
