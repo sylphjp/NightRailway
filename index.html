@@ -951,12 +951,12 @@ html.screensaver .hud { display: none; }
     }
   }
 
-  function drawSignal(n, d, lat, forceRed = false) {
+  function drawSignal(n, d, lat, forcedAspect = null) {
     // Four-lamp type B: ordinary running shows 80% G / 20% YG. At a
     // displayed speed of 131 km/h or more, the upper and lower lamps both
     // turn green as the hidden high-speed GG aspect.
-    const isGG = !forceRed && Math.round(speed * 3.6) >= GG_SPEED_KMH;
-    const isYG = !forceRed && !isGG && rnd(n, 86) < 0.20;
+    const isGG = !forcedAspect && Math.round(speed * 3.6) >= GG_SPEED_KMH;
+    const isYG = !forcedAspect && !isGG && rnd(n, 86) < 0.20;
     const headScale = 0.75;
     const headCenter = 3.95;
     const lamps = [0.60, 0.20, -0.20, -0.60].map(offset => headCenter + offset * headScale);
@@ -989,9 +989,14 @@ html.screensaver .hud { display: none; }
     }
     ctx.globalCompositeOperation = 'lighter';
 
-    if (forceRed) {
-      if (project(d, lat, lamps[0]))
-        glow(P.x, P.y, 0.105 * P.sc, C.red, 0.96 * a);
+    if (forcedAspect) {
+      if ((forcedAspect === 'R' || forcedAspect === 'Y' || forcedAspect === 'YG')
+          && project(d, lat, lamps[0])) {
+        const color = forcedAspect === 'R' ? C.red : C.signalY;
+        glow(P.x, P.y, 0.105 * P.sc, color, 0.96 * a);
+      }
+      if ((forcedAspect === 'YG' || forcedAspect === 'G') && project(d, lat, lamps[3]))
+        glow(P.x, P.y, 0.105 * P.sc, C.signalG, 0.96 * a);
     } else {
       if ((isGG || isYG) && project(d, lat, lamps[0]))
         glow(P.x, P.y, 0.105 * P.sc, isGG ? C.signalG : C.signalY, 0.96 * a);
@@ -1048,7 +1053,7 @@ html.screensaver .hud { display: none; }
       const signalS = homeSignalS(stationIndex);
       if (quadrupleFactorAt(signalS) > 0.98)
         drawSignal(stationIndex * 101 + 41, d, outerSignalLatAt(signalS),
-                   outerRedSignalKey === `home:${stationIndex}`);
+                   outerTrackedSignalAspect(`home:${stationIndex}`));
     }
   }
 
@@ -1253,7 +1258,7 @@ html.screensaver .hud { display: none; }
         // from a line that has not finished diverging yet.
         if (quadrupleFactorAt(s) > 0.98)
           drawSignal(n + 100000, d, outerSignalLatAt(s),
-                     outerRedSignalKey === `block:${n}`);
+                     outerTrackedSignalAspect(`block:${n}`));
       }
     }
     drawTerminalHomeSignals();
@@ -1265,7 +1270,8 @@ html.screensaver .hud { display: none; }
   const OUTER_TRAIN_BRAKE = 1.35;
   const OUTER_TRAIN_STOP_MARGIN = 14;
   const outerTrain = { active: false, s: 0, v: OUTER_TRAIN_CRUISE, cars: 8 };
-  let outerRedSignalKey = null;
+  const outerSignalHistory = [];
+  const outerPassedSignals = new Set();
 
   const trains = [
     { s: trackS + 430, v: -31, cars: 9 },
@@ -1290,7 +1296,16 @@ html.screensaver .hud { display: none; }
     outerTrain.cars = 7 + rand(3);
     outerTrain.s = trackS + 180 + Math.random() * 90;
     outerTrain.v = OUTER_TRAIN_CRUISE;
-    outerRedSignalKey = null;
+    outerSignalHistory.length = 0;
+    outerPassedSignals.clear();
+  }
+
+  function outerTrackedSignalAspect(key) {
+    const distance = outerSignalHistory.indexOf(key);
+    if (distance === 0) return 'R';
+    if (distance === 1) return 'Y';
+    if (distance === 2) return 'YG';
+    return outerPassedSignals.has(key) ? 'G' : null;
   }
 
   function updateOuterSignalAspect(previousFrontS, frontS) {
@@ -1323,7 +1338,13 @@ html.screensaver .hud { display: none; }
       }
     }
 
-    if (lastSignalKey) outerRedSignalKey = lastSignalKey;
+    if (lastSignalKey) {
+      const previousIndex = outerSignalHistory.indexOf(lastSignalKey);
+      if (previousIndex >= 0) outerSignalHistory.splice(previousIndex, 1);
+      outerSignalHistory.unshift(lastSignalKey);
+      if (outerSignalHistory.length > 3) outerSignalHistory.length = 3;
+      outerPassedSignals.add(lastSignalKey);
+    }
   }
 
   function updateOuterTrain(dt) {
@@ -1524,7 +1545,8 @@ html.screensaver .hud { display: none; }
     if (quadrupleTrack) spawnOuterTrain();
     else {
       outerTrain.active = false;
-      outerRedSignalKey = null;
+      outerSignalHistory.length = 0;
+      outerPassedSignals.clear();
     }
     updateTrackModeButton();
   }
