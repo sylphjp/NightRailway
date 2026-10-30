@@ -990,11 +990,13 @@ html.screensaver .hud { display: none; }
     ctx.globalCompositeOperation = 'lighter';
 
     if (forcedAspect) {
-      if ((forcedAspect === 'R' || forcedAspect === 'Y' || forcedAspect === 'YG')
-          && project(d, lat, lamps[0])) {
-        const color = forcedAspect === 'R' ? C.red : C.signalY;
-        glow(P.x, P.y, 0.105 * P.sc, color, 0.96 * a);
-      }
+      // Four-lamp type B, top to bottom: Y / R / Y / G.
+      if (forcedAspect === 'R' && project(d, lat, lamps[1]))
+        glow(P.x, P.y, 0.105 * P.sc, C.red, 0.96 * a);
+      if (forcedAspect === 'Y' && project(d, lat, lamps[2]))
+        glow(P.x, P.y, 0.105 * P.sc, C.signalY, 0.96 * a);
+      if (forcedAspect === 'YG' && project(d, lat, lamps[0]))
+        glow(P.x, P.y, 0.105 * P.sc, C.signalY, 0.96 * a);
       if ((forcedAspect === 'YG' || forcedAspect === 'G') && project(d, lat, lamps[3]))
         glow(P.x, P.y, 0.105 * P.sc, C.signalG, 0.96 * a);
     } else {
