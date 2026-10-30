@@ -90,36 +90,43 @@ html.screensaver .hud { display: none; }
           slower: '減速', faster: '加速', pause: '一時停止', resume: '再開',
           fs: '全画面', fsExit: '全画面を解除',
           doubleTrack: '複線', quadrupleTrack: '複々線', switchToDouble: '複線に切り替え', switchToQuadruple: '複々線に切り替え',
+          switchingToDouble: '複線へ切替中', switchingToQuadruple: '複々線へ切替中',
           keys: '↑↓ 速度 ・ Space 停止 ・ F 全画面' },
     en: { title: 'Night Railway', scene: 'A night railway cab view drawn with points of light',
           slower: 'Slow down', faster: 'Speed up', pause: 'Pause', resume: 'Resume',
           fs: 'Fullscreen', fsExit: 'Exit fullscreen',
           doubleTrack: 'Double track', quadrupleTrack: 'Four tracks', switchToDouble: 'Switch to double track', switchToQuadruple: 'Switch to four tracks',
+          switchingToDouble: 'Switching to double track', switchingToQuadruple: 'Switching to four tracks',
           keys: '↑↓ speed · Space pause · F fullscreen' },
     zh: { title: 'Night Railway', scene: '用光点描绘的夜间铁路驾驶室前方景色',
           slower: '减速', faster: '加速', pause: '暂停', resume: '继续',
           fs: '全屏', fsExit: '退出全屏',
           doubleTrack: '双线', quadrupleTrack: '四线', switchToDouble: '切换为双线', switchToQuadruple: '切换为四线',
+          switchingToDouble: '正在切换为双线', switchingToQuadruple: '正在切换为四线',
           keys: '↑↓ 速度 · 空格 暂停 · F 全屏' },
     ko: { title: 'Night Railway', scene: '빛나는 점으로 그린 야간 철도 전면 전망',
           slower: '감속', faster: '가속', pause: '일시 정지', resume: '재개',
           fs: '전체 화면', fsExit: '전체 화면 종료',
           doubleTrack: '복선', quadrupleTrack: '복복선', switchToDouble: '복선으로 전환', switchToQuadruple: '복복선으로 전환',
+          switchingToDouble: '복선으로 전환 중', switchingToQuadruple: '복복선으로 전환 중',
           keys: '↑↓ 속도 · Space 일시 정지 · F 전체 화면' },
     fr: { title: 'Night Railway', scene: 'Une vue nocturne depuis la cabine d’un train, dessinée avec des points lumineux',
           slower: 'Ralentir', faster: 'Accélérer', pause: 'Pause', resume: 'Reprendre',
           fs: 'Plein écran', fsExit: 'Quitter le plein écran',
           doubleTrack: 'Double voie', quadrupleTrack: 'Quatre voies', switchToDouble: 'Passer à deux voies', switchToQuadruple: 'Passer à quatre voies',
+          switchingToDouble: 'Passage à deux voies', switchingToQuadruple: 'Passage à quatre voies',
           keys: '↑↓ vitesse · Espace pause · F plein écran' },
     de: { title: 'Night Railway', scene: 'Eine nächtliche Führerstandsansicht aus Lichtpunkten',
           slower: 'Langsamer', faster: 'Schneller', pause: 'Pause', resume: 'Fortsetzen',
           fs: 'Vollbild', fsExit: 'Vollbild beenden',
           doubleTrack: 'Zweigleisig', quadrupleTrack: 'Viergleisig', switchToDouble: 'Auf zwei Gleise wechseln', switchToQuadruple: 'Auf vier Gleise wechseln',
+          switchingToDouble: 'Wechsel auf zwei Gleise', switchingToQuadruple: 'Wechsel auf vier Gleise',
           keys: '↑↓ Tempo · Leertaste Pause · F Vollbild' },
     es: { title: 'Night Railway', scene: 'Una vista nocturna desde la cabina de un tren dibujada con puntos de luz',
           slower: 'Reducir velocidad', faster: 'Acelerar', pause: 'Pausa', resume: 'Reanudar',
           fs: 'Pantalla completa', fsExit: 'Salir de pantalla completa',
           doubleTrack: 'Vía doble', quadrupleTrack: 'Cuatro vías', switchToDouble: 'Cambiar a vía doble', switchToQuadruple: 'Cambiar a cuatro vías',
+          switchingToDouble: 'Cambiando a vía doble', switchingToQuadruple: 'Cambiando a cuatro vías',
           keys: '↑↓ velocidad · Espacio pausa · F pantalla completa' },
   };
   // pick the first supported language from the browser's preference list; fall back to English
@@ -1376,8 +1383,9 @@ html.screensaver .hud { display: none; }
 
   function updateTrackModeButton() {
     const displayedMode = trackModeTransition ? trackModeTransition.to : quadrupleTrack;
-    trackModeBtn.textContent = (displayedMode ? T.quadrupleTrack : T.doubleTrack)
-      + (trackModeTransition ? '…' : '');
+    trackModeBtn.textContent = trackModeTransition
+      ? (displayedMode ? T.switchingToQuadruple : T.switchingToDouble)
+      : (displayedMode ? T.quadrupleTrack : T.doubleTrack);
     trackModeBtn.disabled = !!trackModeTransition;
     trackModeBtn.setAttribute('aria-pressed', String(displayedMode));
     trackModeBtn.setAttribute('aria-label', displayedMode ? T.switchToDouble : T.switchToQuadruple);
