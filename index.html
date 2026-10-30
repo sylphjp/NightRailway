@@ -621,8 +621,8 @@ html.screensaver .hud { display: none; }
     return null;
   }
 
-  function findTrackModeTransitionStart() {
-    let start = trackS + TRACK_MODE_TRANSITION_AHEAD;
+  function findTrackModeTransitionStart(minimumStart = trackS + TRACK_MODE_TRANSITION_AHEAD) {
+    let start = Math.max(trackS + TRACK_MODE_TRANSITION_AHEAD, minimumStart);
     for (let attempt = 0; attempt < 8; attempt++) {
       const blockedUntil = transitionOverlapsStation(start, start + TRACK_MODE_TRANSITION_LENGTH);
       if (blockedUntil === null) return start;
@@ -951,12 +951,12 @@ html.screensaver .hud { display: none; }
     }
   }
 
-  function drawSignal(n, d, lat) {
+  function drawSignal(n, d, lat, forceRed = false) {
     // Four-lamp type B: ordinary running shows 80% G / 20% YG. At a
     // displayed speed of 131 km/h or more, the upper and lower lamps both
     // turn green as the hidden high-speed GG aspect.
-    const isGG = Math.round(speed * 3.6) >= GG_SPEED_KMH;
-    const isYG = !isGG && rnd(n, 86) < 0.20;
+    const isGG = !forceRed && Math.round(speed * 3.6) >= GG_SPEED_KMH;
+    const isYG = !forceRed && !isGG && rnd(n, 86) < 0.20;
     const headScale = 0.75;
     const headCenter = 3.95;
     const lamps = [0.60, 0.20, -0.20, -0.60].map(offset => headCenter + offset * headScale);
@@ -989,10 +989,15 @@ html.screensaver .hud { display: none; }
     }
     ctx.globalCompositeOperation = 'lighter';
 
-    if ((isGG || isYG) && project(d, lat, lamps[0]))
-      glow(P.x, P.y, 0.105 * P.sc, isGG ? C.signalG : C.signalY, 0.96 * a);
-    if (project(d, lat, lamps[3]))
-      glow(P.x, P.y, 0.105 * P.sc, C.signalG, 0.96 * a);
+    if (forceRed) {
+      if (project(d, lat, lamps[0]))
+        glow(P.x, P.y, 0.105 * P.sc, C.red, 0.96 * a);
+    } else {
+      if ((isGG || isYG) && project(d, lat, lamps[0]))
+        glow(P.x, P.y, 0.105 * P.sc, isGG ? C.signalG : C.signalY, 0.96 * a);
+      if (project(d, lat, lamps[3]))
+        glow(P.x, P.y, 0.105 * P.sc, C.signalG, 0.96 * a);
+    }
   }
 
   function drawSidingHomeSignal(d, lat) {
@@ -1042,7 +1047,8 @@ html.screensaver .hud { display: none; }
       drawSidingHomeSignal(d, HOME_SIDING_LAT);
       const signalS = homeSignalS(stationIndex);
       if (quadrupleFactorAt(signalS) > 0.98)
-        drawSignal(stationIndex * 101 + 41, d, outerSignalLatAt(signalS));
+        drawSignal(stationIndex * 101 + 41, d, outerSignalLatAt(signalS),
+                   outerRedSignalKey === `home:${stationIndex}`);
     }
   }
 
@@ -1246,7 +1252,8 @@ html.screensaver .hud { display: none; }
         // boundary. Skip it inside a mode-change turnout so no mast sprouts
         // from a line that has not finished diverging yet.
         if (quadrupleFactorAt(s) > 0.98)
-          drawSignal(n + 100000, d, outerSignalLatAt(s));
+          drawSignal(n + 100000, d, outerSignalLatAt(s),
+                     outerRedSignalKey === `block:${n}`);
       }
     }
     drawTerminalHomeSignals();
@@ -1254,6 +1261,12 @@ html.screensaver .hud { display: none; }
   }
 
   // ---------------- Other trains ----------------
+  const OUTER_TRAIN_CRUISE = 85 / 3.6;
+  const OUTER_TRAIN_BRAKE = 1.35;
+  const OUTER_TRAIN_STOP_MARGIN = 14;
+  const outerTrain = { active: false, s: 0, v: OUTER_TRAIN_CRUISE, cars: 8 };
+  let outerRedSignalKey = null;
+
   const trains = [
     { s: trackS + 430, v: -31, cars: 9 },
   ];
@@ -1270,6 +1283,81 @@ html.screensaver .hud { display: none; }
       const d = t.s - trackS;
       if (d < -t.cars * 20 - 20) respawnTrain(t, false);
     }
+  }
+
+  function spawnOuterTrain() {
+    outerTrain.active = true;
+    outerTrain.cars = 7 + rand(3);
+    outerTrain.s = trackS + 180 + Math.random() * 90;
+    outerTrain.v = OUTER_TRAIN_CRUISE;
+    outerRedSignalKey = null;
+  }
+
+  function updateOuterSignalAspect(previousFrontS, frontS) {
+    if (frontS <= previousFrontS) return;
+    let lastSignalS = -Infinity;
+    let lastSignalKey = null;
+
+    const firstBlock = Math.floor(previousFrontS / BLOCK_SIGNAL_SPACING) - 1;
+    const lastBlock = Math.floor(frontS / BLOCK_SIGNAL_SPACING) + 1;
+    for (let n = firstBlock; n <= lastBlock; n++) {
+      const signalS = n * BLOCK_SIGNAL_SPACING;
+      if (signalS <= previousFrontS || signalS > frontS) continue;
+      if (isNearTerminalHomeSignal(signalS) || quadrupleFactorAt(signalS) <= 0.98) continue;
+      if (signalS > lastSignalS) {
+        lastSignalS = signalS;
+        lastSignalKey = `block:${n}`;
+      }
+    }
+
+    const firstStation = Math.floor(previousFrontS / STATION_CYCLE) - 1;
+    const lastStation = Math.floor(frontS / STATION_CYCLE) + 1;
+    for (let stationIndex = firstStation; stationIndex <= lastStation; stationIndex++) {
+      if (!isTerminalStation(stationIndex)) continue;
+      const signalS = homeSignalS(stationIndex);
+      if (signalS <= previousFrontS || signalS > frontS) continue;
+      if (quadrupleFactorAt(signalS) <= 0.98) continue;
+      if (signalS > lastSignalS) {
+        lastSignalS = signalS;
+        lastSignalKey = `home:${stationIndex}`;
+      }
+    }
+
+    if (lastSignalKey) outerRedSignalKey = lastSignalKey;
+  }
+
+  function updateOuterTrain(dt) {
+    if (!outerTrain.active) return;
+    const previousFrontS = outerTrain.s + outerTrain.cars * 19;
+    const merging = trackModeTransition
+      && trackModeTransition.from && !trackModeTransition.to;
+
+    if (merging) {
+      const stopFrontS = trackModeTransition.start - OUTER_TRAIN_STOP_MARGIN;
+      const distance = stopFrontS - previousFrontS;
+      if (distance <= 0.05) {
+        outerTrain.s = stopFrontS - outerTrain.cars * 19;
+        outerTrain.v = 0;
+      } else {
+        outerTrain.v = Math.min(OUTER_TRAIN_CRUISE,
+          Math.sqrt(2 * OUTER_TRAIN_BRAKE * distance));
+        outerTrain.s += outerTrain.v * dt;
+        const newFrontS = outerTrain.s + outerTrain.cars * 19;
+        if (newFrontS > stopFrontS) {
+          outerTrain.s = stopFrontS - outerTrain.cars * 19;
+          outerTrain.v = 0;
+        }
+      }
+    } else {
+      outerTrain.v = OUTER_TRAIN_CRUISE;
+      outerTrain.s += outerTrain.v * dt;
+    }
+
+    const frontS = outerTrain.s + outerTrain.cars * 19;
+    updateOuterSignalAspect(previousFrontS, frontS);
+
+    if (!merging && (frontS < trackS - 20 || outerTrain.s > trackS + MAXD + 240))
+      spawnOuterTrain();
   }
 
   function drawTrainWindows(d, centerAt, cars, intensity) {
@@ -1343,6 +1431,25 @@ html.screensaver .hud { display: none; }
     }
   }
 
+  function drawOuterTrain() {
+    if (!outerTrain.active) return;
+    const rearD = outerTrain.s - trackS;
+    const frontD = rearD + outerTrain.cars * 19;
+    if (frontD < 2 || rearD >= MAXD) return;
+    if (quadrupleFactorAt(outerTrain.s + outerTrain.cars * 9.5) < 0.90) return;
+
+    drawTrainWindows(rearD + 8, leftOuterCenterAt, outerTrain.cars, 0.54);
+    if (rearD < 2 || rearD >= MAXD) return;
+    const center = leftOuterCenterAt(outerTrain.s);
+    const a = fade(rearD, MAXD);
+    for (const k of [-1, 1]) {
+      if (project(rearD, center + 0.52 * k, 1.18))
+        glow(P.x, P.y, 0.105 * P.sc, C.tail, 0.94 * a);
+    }
+    if (project(rearD, center, 2.45))
+      glow(P.x, P.y, 0.043 * P.sc, C.red, 0.40 * a);
+  }
+
   function drawTrains() {
     for (const t of trains) {
       const d = t.s - trackS;
@@ -1393,7 +1500,14 @@ html.screensaver .hud { display: none; }
 
   trackModeBtn.addEventListener('click', () => {
     if (trackModeTransition) return;
-    const start = findTrackModeTransitionStart();
+    let minimumStart = trackS + TRACK_MODE_TRANSITION_AHEAD;
+    if (quadrupleTrack && outerTrain.active) {
+      const frontS = outerTrain.s + outerTrain.cars * 19;
+      const brakingDistance = outerTrain.v * outerTrain.v / (2 * OUTER_TRAIN_BRAKE);
+      minimumStart = Math.max(minimumStart,
+        frontS + brakingDistance + OUTER_TRAIN_STOP_MARGIN);
+    }
+    const start = findTrackModeTransitionStart(minimumStart);
     trackModeTransition = {
       start,
       end: start + TRACK_MODE_TRANSITION_LENGTH,
@@ -1407,6 +1521,11 @@ html.screensaver .hud { display: none; }
     if (!trackModeTransition || trackS < trackModeTransition.end) return;
     quadrupleTrack = trackModeTransition.to;
     trackModeTransition = null;
+    if (quadrupleTrack) spawnOuterTrain();
+    else {
+      outerTrain.active = false;
+      outerRedSignalKey = null;
+    }
     updateTrackModeButton();
   }
   updateTrackModeButton();
@@ -1511,6 +1630,7 @@ html.screensaver .hud { display: none; }
       heading += curvature(trackS) * speed * dt;
       trackS += speed * dt;
       updateTrains(dt);
+      updateOuterTrain(dt);
       updateMeteors(dt);
       updateUfo(dt);
     }
@@ -1530,6 +1650,7 @@ html.screensaver .hud { display: none; }
     drawUfo();
     drawRailway();
     drawStoppedTrains();
+    drawOuterTrain();
     drawTrains();
 
     const kmh = Math.round(speed * 3.6);
