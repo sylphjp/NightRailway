@@ -1272,7 +1272,8 @@ html.screensaver .hud { display: none; }
   const OUTER_TRAIN_BRAKE = 1.35;
   const OUTER_TRAIN_STOP_MARGIN = 14;
   const outerTrain = { active: false, s: 0, v: OUTER_TRAIN_CRUISE, cars: 8 };
-  const outerSignalHistory = [];
+  const outerSignalOrder = [];
+  const outerSignalStages = new Map();
 
   const trains = [
     { s: trackS + 430, v: -31, cars: 9 },
@@ -1297,57 +1298,71 @@ html.screensaver .hud { display: none; }
     outerTrain.cars = 7 + rand(3);
     outerTrain.s = trackS + 180 + Math.random() * 90;
     outerTrain.v = OUTER_TRAIN_CRUISE;
-    outerSignalHistory.length = 0;
+    outerSignalOrder.length = 0;
+    outerSignalStages.clear();
   }
 
   function outerTrackedSignalAspect(key) {
-    const distance = outerSignalHistory.indexOf(key);
-    if (distance === 0) return 'R';
-    if (distance === 1) return 'Y';
-    if (distance === 2) return 'YG';
+    const stage = outerSignalStages.get(key);
+    if (stage === 0) return 'R';
+    if (stage === 1) return 'Y';
+    if (stage === 2) return 'YG';
     return 'G';
   }
 
-  function updateOuterSignalAspect(previousFrontS, frontS) {
-    if (frontS <= previousFrontS) return;
-    let lastSignalS = -Infinity;
-    let lastSignalKey = null;
+  function outerSignalsBetween(previousS, currentS) {
+    if (currentS <= previousS) return [];
+    const signals = [];
 
-    const firstBlock = Math.floor(previousFrontS / BLOCK_SIGNAL_SPACING) - 1;
-    const lastBlock = Math.floor(frontS / BLOCK_SIGNAL_SPACING) + 1;
+    const firstBlock = Math.floor(previousS / BLOCK_SIGNAL_SPACING) - 1;
+    const lastBlock = Math.floor(currentS / BLOCK_SIGNAL_SPACING) + 1;
     for (let n = firstBlock; n <= lastBlock; n++) {
       const signalS = n * BLOCK_SIGNAL_SPACING;
-      if (signalS <= previousFrontS || signalS > frontS) continue;
+      if (signalS <= previousS || signalS > currentS) continue;
       if (isNearTerminalHomeSignal(signalS) || quadrupleFactorAt(signalS) <= 0.98) continue;
-      if (signalS > lastSignalS) {
-        lastSignalS = signalS;
-        lastSignalKey = `block:${n}`;
-      }
+      signals.push({ s: signalS, key: `block:${n}` });
     }
 
-    const firstStation = Math.floor(previousFrontS / STATION_CYCLE) - 1;
-    const lastStation = Math.floor(frontS / STATION_CYCLE) + 1;
+    const firstStation = Math.floor(previousS / STATION_CYCLE) - 1;
+    const lastStation = Math.floor(currentS / STATION_CYCLE) + 1;
     for (let stationIndex = firstStation; stationIndex <= lastStation; stationIndex++) {
       if (!isTerminalStation(stationIndex)) continue;
       const signalS = homeSignalS(stationIndex);
-      if (signalS <= previousFrontS || signalS > frontS) continue;
+      if (signalS <= previousS || signalS > currentS) continue;
       if (quadrupleFactorAt(signalS) <= 0.98) continue;
-      if (signalS > lastSignalS) {
-        lastSignalS = signalS;
-        lastSignalKey = `home:${stationIndex}`;
-      }
+      signals.push({ s: signalS, key: `home:${stationIndex}` });
     }
 
-    if (lastSignalKey) {
-      const previousIndex = outerSignalHistory.indexOf(lastSignalKey);
-      if (previousIndex >= 0) outerSignalHistory.splice(previousIndex, 1);
-      outerSignalHistory.unshift(lastSignalKey);
-      if (outerSignalHistory.length > 3) outerSignalHistory.length = 3;
+    signals.sort((a, b) => a.s - b.s);
+    return signals;
+  }
+
+  function updateOuterSignalAspect(previousRearS, rearS, previousFrontS, frontS) {
+    // A signal turns red as soon as the head of the train passes it.
+    for (const signal of outerSignalsBetween(previousFrontS, frontS)) {
+      if (outerSignalStages.has(signal.key)) continue;
+      outerSignalOrder.push(signal.key);
+      outerSignalStages.set(signal.key, 0);
+    }
+
+    // Earlier signals recover only after the tail has cleared the next signal.
+    // A long train can therefore leave more than one signal at red while it
+    // occupies two adjacent blocks.
+    for (const signal of outerSignalsBetween(previousRearS, rearS)) {
+      const clearedIndex = outerSignalOrder.indexOf(signal.key);
+      if (clearedIndex < 0) continue;
+      for (let i = 0; i < clearedIndex; i++) {
+        const key = outerSignalOrder[i];
+        const stage = outerSignalStages.get(key);
+        if (stage !== undefined && stage < 3)
+          outerSignalStages.set(key, stage + 1);
+      }
     }
   }
 
   function updateOuterTrain(dt) {
     if (!outerTrain.active) return;
+    const previousRearS = outerTrain.s;
     const previousFrontS = outerTrain.s + outerTrain.cars * 19;
     const merging = trackModeTransition
       && trackModeTransition.from && !trackModeTransition.to;
@@ -1373,8 +1388,9 @@ html.screensaver .hud { display: none; }
       outerTrain.s += outerTrain.v * dt;
     }
 
+    const rearS = outerTrain.s;
     const frontS = outerTrain.s + outerTrain.cars * 19;
-    updateOuterSignalAspect(previousFrontS, frontS);
+    updateOuterSignalAspect(previousRearS, rearS, previousFrontS, frontS);
 
     if (!merging && (frontS < trackS - 20 || outerTrain.s > trackS + MAXD + 240))
       spawnOuterTrain();
@@ -1544,7 +1560,8 @@ html.screensaver .hud { display: none; }
     if (quadrupleTrack) spawnOuterTrain();
     else {
       outerTrain.active = false;
-      outerSignalHistory.length = 0;
+      outerSignalOrder.length = 0;
+      outerSignalStages.clear();
     }
     updateTrackModeButton();
   }
