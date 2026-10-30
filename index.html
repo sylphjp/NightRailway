@@ -556,9 +556,6 @@ html.screensaver .hud { display: none; }
   const MESSENGER_SAG = 0.28;
   const CONTACT_STAGGER = 0.125;
   const HOME_SIGNAL_MARGIN = 20;
-  const SCISSORS_LENGTH = 80;
-  const SCISSORS_GAP = 24;
-  const OUTER_INTERLOCKING_REACH = SCISSORS_LENGTH + SCISSORS_GAP;
   const HOME_MAIN_LAT = -1.9;
   const HOME_SIDING_LAT = -2.75;
   const SIDING_LEFT = -5.9;
@@ -588,8 +585,7 @@ html.screensaver .hud { display: none; }
   const isIslandStation = index => positiveMod(index, STATION_TYPE_COUNT) === STATION_TYPE_ISLAND;
 
   function homeSignalS(stationIndex) {
-    return stationIndex * STATION_CYCLE + STATION_START - TURNOUT_LENGTH
-      - (quadrupleTrack ? OUTER_INTERLOCKING_REACH : 0) - HOME_SIGNAL_MARGIN;
+    return stationIndex * STATION_CYCLE + STATION_START - TURNOUT_LENGTH - HOME_SIGNAL_MARGIN;
   }
 
   function isNearTerminalHomeSignal(s, radius = BLOCK_SIGNAL_SPACING) {
@@ -789,40 +785,27 @@ html.screensaver .hud { display: none; }
     }
   }
 
-  function drawScissorsCrossing(startS, endS, firstAt, secondAt, alpha) {
-    drawTurnoutConnector(startS, endS, firstAt, secondAt, alpha);
-    drawTurnoutConnector(startS, endS, secondAt, firstAt, alpha * 0.90);
-  }
-
   function drawTerminalCrossovers(stationIndex) {
     const base = stationIndex * STATION_CYCLE;
     const routeStart = base + STATION_START - TURNOUT_LENGTH;
     const routeEnd = base + STATION_END + TURNOUT_LENGTH;
-    const stationSideOffset = 12;
+    const offset = 18;
+    const length = 96;
     const leftOuterAt = s => leftOuterCenterAt(s);
     const rightOuterAt = s => rightOuterCenterAt(s);
     const leftMainAt = () => MAIN_TRACK_LEFT;
     const rightMainAt = () => MAIN_TRACK_RIGHT;
 
-    const entryInnerStart = routeStart - OUTER_INTERLOCKING_REACH;
-    const entryInnerEnd = entryInnerStart + SCISSORS_LENGTH;
-    const entryPairStart = routeStart + stationSideOffset;
-    const entryPairEnd = entryPairStart + SCISSORS_LENGTH;
-    const exitPairEnd = routeEnd - stationSideOffset;
-    const exitPairStart = exitPairEnd - SCISSORS_LENGTH;
-    const exitInnerStart = routeEnd + SCISSORS_GAP;
-    const exitInnerEnd = exitInnerStart + SCISSORS_LENGTH;
-
-    // From the station outward: two inner/outer scissors first, followed by
-    // the scissors connecting the two inner running lines at the outer edge
-    // of the interlocking. No additional platform track is created.
-    drawScissorsCrossing(entryPairStart, entryPairEnd, leftMainAt, leftOuterAt, 0.54);
-    drawScissorsCrossing(entryPairStart, entryPairEnd, rightMainAt, rightOuterAt, 0.40);
-    drawScissorsCrossing(entryInnerStart, entryInnerEnd, leftMainAt, rightMainAt, 0.50);
-
-    drawScissorsCrossing(exitPairStart, exitPairEnd, leftOuterAt, leftMainAt, 0.50);
-    drawScissorsCrossing(exitPairStart, exitPairEnd, rightOuterAt, rightMainAt, 0.36);
-    drawScissorsCrossing(exitInnerStart, exitInnerEnd, leftMainAt, rightMainAt, 0.46);
+    // Entry and exit connections keep B as a four-track station while making
+    // the route between the inner and outer lines visibly selectable.
+    drawTurnoutConnector(routeStart + offset, routeStart + offset + length,
+                         leftMainAt, leftOuterAt, 0.54);
+    drawTurnoutConnector(routeStart + offset, routeStart + offset + length,
+                         rightMainAt, rightOuterAt, 0.40);
+    drawTurnoutConnector(routeEnd - offset - length, routeEnd - offset,
+                         leftOuterAt, leftMainAt, 0.50);
+    drawTurnoutConnector(routeEnd - offset - length, routeEnd - offset,
+                         rightOuterAt, rightMainAt, 0.36);
   }
 
   function drawTerminalStationTracks() {
@@ -836,10 +819,8 @@ html.screensaver .hud { display: none; }
       const base = stationIndex * STATION_CYCLE;
       const routeStart = base + STATION_START - TURNOUT_LENGTH;
       const routeEnd = base + STATION_END + TURNOUT_LENGTH;
-      const visibleStart = quadrupleTrack ? routeStart - OUTER_INTERLOCKING_REACH : routeStart;
-      const visibleEnd = quadrupleTrack ? routeEnd + OUTER_INTERLOCKING_REACH : routeEnd;
-      const near = Math.max(2, visibleStart - trackS);
-      const far = Math.min(MAXD - 1, visibleEnd - trackS);
+      const near = Math.max(2, routeStart - trackS);
+      const far = Math.min(MAXD - 1, routeEnd - trackS);
       if (near >= far) continue;
 
       if (quadrupleTrack) {
