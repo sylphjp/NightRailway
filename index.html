@@ -1055,7 +1055,7 @@ html.screensaver .hud { display: none; }
       const signalS = homeSignalS(stationIndex);
       if (quadrupleFactorAt(signalS) > 0.98)
         drawSignal(stationIndex * 101 + 41, d, outerSignalLatAt(signalS),
-                   outerTrackedSignalAspect(`home:${stationIndex}`));
+                   outerTrackedSignalAspect(signalS));
     }
   }
 
@@ -1260,7 +1260,7 @@ html.screensaver .hud { display: none; }
         // from a line that has not finished diverging yet.
         if (quadrupleFactorAt(s) > 0.98)
           drawSignal(n + 100000, d, outerSignalLatAt(s),
-                     outerTrackedSignalAspect(`block:${n}`));
+                     outerTrackedSignalAspect(s));
       }
     }
     drawTerminalHomeSignals();
@@ -1272,8 +1272,6 @@ html.screensaver .hud { display: none; }
   const OUTER_TRAIN_BRAKE = 1.35;
   const OUTER_TRAIN_STOP_MARGIN = 14;
   const outerTrain = { active: false, s: 0, v: OUTER_TRAIN_CRUISE, cars: 8 };
-  const outerSignalOrder = [];
-  const outerSignalStages = new Map();
 
   const trains = [
     { s: trackS + 430, v: -31, cars: 9 },
@@ -1298,16 +1296,6 @@ html.screensaver .hud { display: none; }
     outerTrain.cars = 7 + rand(3);
     outerTrain.s = trackS + 180 + Math.random() * 90;
     outerTrain.v = OUTER_TRAIN_CRUISE;
-    outerSignalOrder.length = 0;
-    outerSignalStages.clear();
-  }
-
-  function outerTrackedSignalAspect(key) {
-    const stage = outerSignalStages.get(key);
-    if (stage === 0) return 'R';
-    if (stage === 1) return 'Y';
-    if (stage === 2) return 'YG';
-    return 'G';
   }
 
   function outerSignalsBetween(previousS, currentS) {
@@ -1337,32 +1325,31 @@ html.screensaver .hud { display: none; }
     return signals;
   }
 
-  function updateOuterSignalAspect(previousRearS, rearS, previousFrontS, frontS) {
-    // A signal turns red as soon as the head of the train passes it.
-    for (const signal of outerSignalsBetween(previousFrontS, frontS)) {
-      if (outerSignalStages.has(signal.key)) continue;
-      outerSignalOrder.push(signal.key);
-      outerSignalStages.set(signal.key, 0);
+  function outerTrackedSignalAspect(signalS) {
+    if (!outerTrain.active) return 'G';
+
+    const frontS = outerTrain.s + outerTrain.cars * 19;
+    if (frontS < signalS) return 'G';
+
+    // Determine recovery from the train's current tail position instead of
+    // remembered head-passage events. This also handles a newly spawned train
+    // that is already occupying a block when its signal state is first drawn.
+    const downstreamSignals = outerSignalsBetween(signalS, signalS + STATION_CYCLE);
+    let clearedBlocks = 0;
+    for (const downstream of downstreamSignals) {
+      if (outerTrain.s < downstream.s) break;
+      clearedBlocks++;
+      if (clearedBlocks === 3) break;
     }
 
-    // Earlier signals recover only after the tail has cleared the next signal.
-    // A long train can therefore leave more than one signal at red while it
-    // occupies two adjacent blocks.
-    for (const signal of outerSignalsBetween(previousRearS, rearS)) {
-      const clearedIndex = outerSignalOrder.indexOf(signal.key);
-      if (clearedIndex < 0) continue;
-      for (let i = 0; i < clearedIndex; i++) {
-        const key = outerSignalOrder[i];
-        const stage = outerSignalStages.get(key);
-        if (stage !== undefined && stage < 3)
-          outerSignalStages.set(key, stage + 1);
-      }
-    }
+    if (clearedBlocks === 0) return 'R';
+    if (clearedBlocks === 1) return 'Y';
+    if (clearedBlocks === 2) return 'YG';
+    return 'G';
   }
 
   function updateOuterTrain(dt) {
     if (!outerTrain.active) return;
-    const previousRearS = outerTrain.s;
     const previousFrontS = outerTrain.s + outerTrain.cars * 19;
     const merging = trackModeTransition
       && trackModeTransition.from && !trackModeTransition.to;
@@ -1387,10 +1374,7 @@ html.screensaver .hud { display: none; }
       outerTrain.v = OUTER_TRAIN_CRUISE;
       outerTrain.s += outerTrain.v * dt;
     }
-
-    const rearS = outerTrain.s;
     const frontS = outerTrain.s + outerTrain.cars * 19;
-    updateOuterSignalAspect(previousRearS, rearS, previousFrontS, frontS);
 
     if (!merging && (frontS < trackS - 20 || outerTrain.s > trackS + MAXD + 240))
       spawnOuterTrain();
@@ -1560,8 +1544,6 @@ html.screensaver .hud { display: none; }
     if (quadrupleTrack) spawnOuterTrain();
     else {
       outerTrain.active = false;
-      outerSignalOrder.length = 0;
-      outerSignalStages.clear();
     }
     updateTrackModeButton();
   }
