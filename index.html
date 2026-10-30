@@ -1273,7 +1273,6 @@ html.screensaver .hud { display: none; }
   const OUTER_TRAIN_STOP_MARGIN = 14;
   const outerTrain = { active: false, s: 0, v: OUTER_TRAIN_CRUISE, cars: 8 };
   const outerSignalHistory = [];
-  const outerPassedSignals = new Set();
 
   const trains = [
     { s: trackS + 430, v: -31, cars: 9 },
@@ -1299,7 +1298,6 @@ html.screensaver .hud { display: none; }
     outerTrain.s = trackS + 180 + Math.random() * 90;
     outerTrain.v = OUTER_TRAIN_CRUISE;
     outerSignalHistory.length = 0;
-    outerPassedSignals.clear();
   }
 
   function outerTrackedSignalAspect(key) {
@@ -1307,7 +1305,7 @@ html.screensaver .hud { display: none; }
     if (distance === 0) return 'R';
     if (distance === 1) return 'Y';
     if (distance === 2) return 'YG';
-    return outerPassedSignals.has(key) ? 'G' : null;
+    return 'G';
   }
 
   function updateOuterSignalAspect(previousFrontS, frontS) {
@@ -1345,7 +1343,6 @@ html.screensaver .hud { display: none; }
       if (previousIndex >= 0) outerSignalHistory.splice(previousIndex, 1);
       outerSignalHistory.unshift(lastSignalKey);
       if (outerSignalHistory.length > 3) outerSignalHistory.length = 3;
-      outerPassedSignals.add(lastSignalKey);
     }
   }
 
@@ -1548,7 +1545,6 @@ html.screensaver .hud { display: none; }
     else {
       outerTrain.active = false;
       outerSignalHistory.length = 0;
-      outerPassedSignals.clear();
     }
     updateTrackModeButton();
   }
