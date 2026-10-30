@@ -560,8 +560,6 @@ html.screensaver .hud { display: none; }
   const HOME_SIDING_LAT = -2.75;
   const SIDING_LEFT = -5.9;
   const SIDING_RIGHT = 10.0;
-  const QUAD_TERMINAL_SIDING_LEFT = -8.2;
-  const QUAD_TERMINAL_SIDING_RIGHT = 12.3;
   const ISLAND_RIGHT_TRACK = 8.1;
   const QUAD_ISLAND_OUTER_LEFT = -8.1;
   const QUAD_ISLAND_OUTER_RIGHT = 12.2;
@@ -575,10 +573,6 @@ html.screensaver .hud { display: none; }
   const QUAD_SIDE_PLATFORMS = [
     { edge: -6.35, outer: -7.75, post: -7.45, lamp: -7.40, edgeLight: -6.28, outerLight: -7.82 },
     { edge: 10.45, outer: 11.85, post: 11.55, lamp: 11.50, edgeLight: 10.38, outerLight: 11.92 },
-  ];
-  const QUAD_TERMINAL_PLATFORMS = [
-    { edge: -5.45, outer: -6.85, post: -6.55, lamp: -6.50, edgeLight: -5.38, outerLight: -6.92 },
-    { edge:  9.55, outer: 10.95, post: 10.65, lamp: 10.60, edgeLight:  9.48, outerLight: 11.02 },
   ];
   const QUAD_ISLAND_PLATFORMS = [
     { edge: -2.25, outer: -5.85, post: -4.05, lamp: -4.05, edgeLight: -2.18, outerLight: -5.92 },
@@ -637,12 +631,14 @@ html.screensaver .hud { display: none; }
   function leftOuterCenterAt(s) {
     const index = Math.floor(s / STATION_CYCLE);
     return OUTER_TRACK_LEFT
+      + (SIDING_LEFT - OUTER_TRACK_LEFT) * sidingFactor(s, index)
       + (QUAD_ISLAND_OUTER_LEFT - OUTER_TRACK_LEFT) * islandFactor(s, index);
   }
 
   function rightOuterCenterAt(s) {
     const index = Math.floor(s / STATION_CYCLE);
     return OUTER_TRACK_RIGHT
+      + (SIDING_RIGHT - OUTER_TRACK_RIGHT) * sidingFactor(s, index)
       + (QUAD_ISLAND_OUTER_RIGHT - OUTER_TRACK_RIGHT) * islandFactor(s, index);
   }
 
@@ -767,6 +763,51 @@ html.screensaver .hud { display: none; }
     }
   }
 
+  function drawTurnoutConnector(startS, endS, fromAt, toAt, alpha) {
+    const near = Math.max(2, startS - trackS);
+    const far = Math.min(MAXD - 1, endS - trackS);
+    if (near >= far) return;
+    const centerAt = s => {
+      const t = smooth((s - startS) / (endS - startS));
+      return fromAt(s) + (toAt(s) - fromAt(s)) * t;
+    };
+
+    for (const railOffset of [-RAIL_HALF_GAUGE, RAIL_HALF_GAUGE]) {
+      worldVariableCurve(s => centerAt(s) + railOffset, 0.065, near, far, 1.2,
+                         'rgb(205,220,245)', 1.2, alpha);
+    }
+    for (let s = Math.ceil((trackS + near) / 1.05) * 1.05; s < trackS + far; s += 1.05) {
+      const d = s - trackS;
+      const center = centerAt(s);
+      worldSegment(d, center - SLEEPER_HALF_WIDTH, 0.03,
+                   d, center + SLEEPER_HALF_WIDTH, 0.03,
+                   'rgb(155,165,185)', Math.max(0.45, 1.35 * FOCAL / d / 35), alpha * 0.58);
+    }
+  }
+
+  function drawTerminalCrossovers(stationIndex) {
+    const base = stationIndex * STATION_CYCLE;
+    const routeStart = base + STATION_START - TURNOUT_LENGTH;
+    const routeEnd = base + STATION_END + TURNOUT_LENGTH;
+    const offset = 18;
+    const length = 96;
+    const leftOuterAt = s => leftOuterCenterAt(s);
+    const rightOuterAt = s => rightOuterCenterAt(s);
+    const leftMainAt = () => MAIN_TRACK_LEFT;
+    const rightMainAt = () => MAIN_TRACK_RIGHT;
+
+    // Entry and exit connections keep B as a four-track station while making
+    // the route between the inner and outer lines visibly selectable.
+    drawTurnoutConnector(routeStart + offset, routeStart + offset + length,
+                         leftMainAt, leftOuterAt, 0.54);
+    drawTurnoutConnector(routeStart + offset, routeStart + offset + length,
+                         rightMainAt, rightOuterAt, 0.40);
+    drawTurnoutConnector(routeEnd - offset - length, routeEnd - offset,
+                         leftOuterAt, leftMainAt, 0.50);
+    drawTurnoutConnector(routeEnd - offset - length, routeEnd - offset,
+                         rightOuterAt, rightMainAt, 0.36);
+  }
+
   function drawTerminalStationTracks() {
     const firstIndex = Math.floor(trackS / STATION_CYCLE) - 1;
     const lastIndex = Math.floor((trackS + MAXD) / STATION_CYCLE) + 1;
@@ -782,19 +823,15 @@ html.screensaver .hud { display: none; }
       const far = Math.min(MAXD - 1, routeEnd - trackS);
       if (near >= far) continue;
 
-      // B-type terminal stations retain a visible turnout in both modes. In
-      // four-track mode the siding branches from the continuous outer line,
-      // producing a distinctive six-track station instead of another 2x4
-      // island-platform layout.
-      const routes = quadrupleTrack
-        ? [
-            { main: OUTER_TRACK_LEFT, outer: QUAD_TERMINAL_SIDING_LEFT, alpha: 0.46 },
-            { main: OUTER_TRACK_RIGHT, outer: QUAD_TERMINAL_SIDING_RIGHT, alpha: 0.32 },
-          ]
-        : [
-            { main: MAIN_TRACK_LEFT, outer: SIDING_LEFT, alpha: 0.52 },
-            { main: MAIN_TRACK_RIGHT, outer: SIDING_RIGHT, alpha: 0.34 },
-          ];
+      if (quadrupleTrack) {
+        drawTerminalCrossovers(stationIndex);
+        continue;
+      }
+
+      const routes = [
+        { main: MAIN_TRACK_LEFT, outer: SIDING_LEFT, alpha: 0.52 },
+        { main: MAIN_TRACK_RIGHT, outer: SIDING_RIGHT, alpha: 0.34 },
+      ];
 
       for (const route of routes) {
         const centerAt = s => sidingCenter(s, route.main, route.outer, stationIndex);
@@ -938,7 +975,7 @@ html.screensaver .hud { display: none; }
       const terminal = isTerminalStation(stationIndex);
       const island = isIslandStation(stationIndex);
       const stationPlatforms = quadrupleTrack
-        ? (island ? QUAD_ISLAND_PLATFORMS : terminal ? QUAD_TERMINAL_PLATFORMS : QUAD_SIDE_PLATFORMS)
+        ? (island ? QUAD_ISLAND_PLATFORMS : terminal ? PLATFORMS : QUAD_SIDE_PLATFORMS)
         : (island ? [ISLAND_PLATFORM] : PLATFORMS);
       const doubleSided = terminal || island;
       const ds = b + STATION_START - trackS, de = b + STATION_END - trackS;
@@ -1044,22 +1081,14 @@ html.screensaver .hud { display: none; }
       const island = islandFactorAt(s);
       const leftPole = quadrupleTrack
         ? leftOuterCenterAt(s) - 2.25
-          + (QUAD_TERMINAL_SIDING_LEFT - OUTER_TRACK_LEFT) * passing
         : GANTRY_LEFT + (PASSING_GANTRY_LEFT - GANTRY_LEFT) * passing;
       const rightPole = quadrupleTrack
         ? rightOuterCenterAt(s) + 2.25
-          + (QUAD_TERMINAL_SIDING_RIGHT - OUTER_TRACK_RIGHT) * passing
         : GANTRY_RIGHT
           + (PASSING_GANTRY_RIGHT - GANTRY_RIGHT) * passing
           + (ISLAND_GANTRY_RIGHT - GANTRY_RIGHT) * island;
-      const leftSidingOrigin = quadrupleTrack ? OUTER_TRACK_LEFT : MAIN_TRACK_LEFT;
-      const rightSidingOrigin = quadrupleTrack ? OUTER_TRACK_RIGHT : MAIN_TRACK_RIGHT;
-      const leftSidingDestination = quadrupleTrack ? QUAD_TERMINAL_SIDING_LEFT : SIDING_LEFT;
-      const rightSidingDestination = quadrupleTrack ? QUAD_TERMINAL_SIDING_RIGHT : SIDING_RIGHT;
-      const leftSidingCenter = leftSidingOrigin
-        + (leftSidingDestination - leftSidingOrigin) * passing;
-      const rightSidingCenter = rightSidingOrigin
-        + (rightSidingDestination - rightSidingOrigin) * passing;
+      const leftSidingCenter = MAIN_TRACK_LEFT + (SIDING_LEFT - MAIN_TRACK_LEFT) * passing;
+      const rightSidingCenter = MAIN_TRACK_RIGHT + (SIDING_RIGHT - MAIN_TRACK_RIGHT) * passing;
       const rightMainCenter = rightMainCenterAt(s);
       const stagger = catenaryStaggerAt(s);
       const leftContact = MAIN_TRACK_LEFT + stagger;
@@ -1085,7 +1114,7 @@ html.screensaver .hud { display: none; }
         worldSegment(d, rightOuterContact, 6.1, d, rightOuterContact, MESSENGER_SUPPORT_H,
                      'rgb(135,155,180)', 0.65, a);
       }
-      if (passing > 0.015) {
+      if (!quadrupleTrack && passing > 0.015) {
         worldSegment(d, leftSidingContact, 6.1, d, leftSidingContact, MESSENGER_SUPPORT_H,
                      'rgb(135,155,180)', 0.65, a * passing);
         worldSegment(d, rightSidingContact, 6.1, d, rightSidingContact, MESSENGER_SUPPORT_H,
@@ -1189,10 +1218,10 @@ html.screensaver .hud { display: none; }
       // Each direction is decided independently, so a station may contain no
       // stopped train, one train, or trains on both outer sidings.
       drawStoppedTrain(stationIndex, quadrupleTrack ? OUTER_TRACK_LEFT : MAIN_TRACK_LEFT,
-                       quadrupleTrack ? QUAD_TERMINAL_SIDING_LEFT : SIDING_LEFT,
+                       SIDING_LEFT,
                        false, 301);
       drawStoppedTrain(stationIndex, quadrupleTrack ? OUTER_TRACK_RIGHT : MAIN_TRACK_RIGHT,
-                       quadrupleTrack ? QUAD_TERMINAL_SIDING_RIGHT : SIDING_RIGHT,
+                       SIDING_RIGHT,
                        true, 303);
     }
   }
