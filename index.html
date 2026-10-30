@@ -57,6 +57,7 @@ html.screensaver .hud { display: none; }
 }
 .hud button:hover { border-color: var(--amber); color: var(--amber); }
 .hud button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.hud button:disabled { opacity: 0.58; cursor: wait; }
 .hud button.mode { width: auto; min-width: 5.5em; padding: 0 10px; font-family: var(--sans); font-size: 13px; }
 .keys { font-size: 11px; color: var(--dim); letter-spacing: .04em; }
 @media (max-width: 520px) { .keys { display: none; } }
@@ -534,6 +535,7 @@ html.screensaver .hud { display: none; }
   const OUTER_TRACK_LEFT = -4.1;
   const OUTER_TRACK_RIGHT = 8.2;
   let quadrupleTrack = false;
+  let trackModeTransition = null;
 
   // Station types repeat A / B / C: side-platform, terminal with sidings, and
   // island-platform. The four-track layout changes their platform placement,
@@ -546,6 +548,9 @@ html.screensaver .hud { display: none; }
   const STATION_TYPE_TERMINAL = 1;  // B: terminal station with sidings
   const STATION_TYPE_ISLAND = 2;    // C: island-platform station
   const TURNOUT_LENGTH = 180;
+  const TRACK_MODE_TRANSITION_LENGTH = 180;
+  const TRACK_MODE_TRANSITION_AHEAD = 150;
+  const TRACK_MODE_STATION_CLEARANCE = 55;
   const BLOCK_SIGNAL_SPACING = 235;
   const STOPPED_TRAIN_PROBABILITY = 0.30;
   const GG_SPEED_KMH = 131;
@@ -583,6 +588,40 @@ html.screensaver .hud { display: none; }
   const isSideStation = index => positiveMod(index, STATION_TYPE_COUNT) === STATION_TYPE_SIDE;
   const isTerminalStation = index => positiveMod(index, STATION_TYPE_COUNT) === STATION_TYPE_TERMINAL;
   const isIslandStation = index => positiveMod(index, STATION_TYPE_COUNT) === STATION_TYPE_ISLAND;
+
+  function quadrupleFactorAt(s) {
+    if (!trackModeTransition) return quadrupleTrack ? 1 : 0;
+    if (s <= trackModeTransition.start) return trackModeTransition.from ? 1 : 0;
+    if (s >= trackModeTransition.end) return trackModeTransition.to ? 1 : 0;
+    const t = smooth((s - trackModeTransition.start)
+      / (trackModeTransition.end - trackModeTransition.start));
+    return trackModeTransition.from ? 1 - t : t;
+  }
+
+  const isQuadrupleAt = s => quadrupleFactorAt(s) >= 0.5;
+  const outerTrackVisibilityAt = s => smooth(Math.min(1, quadrupleFactorAt(s) * 3));
+
+  function transitionOverlapsStation(start, end) {
+    const firstIndex = Math.floor(start / STATION_CYCLE) - 1;
+    const lastIndex = Math.floor(end / STATION_CYCLE) + 1;
+    for (let stationIndex = firstIndex; stationIndex <= lastIndex; stationIndex++) {
+      const base = stationIndex * STATION_CYCLE;
+      const stationStart = base + STATION_START - TURNOUT_LENGTH - TRACK_MODE_STATION_CLEARANCE;
+      const stationEnd = base + STATION_END + TURNOUT_LENGTH + TRACK_MODE_STATION_CLEARANCE;
+      if (start < stationEnd && end > stationStart) return stationEnd;
+    }
+    return null;
+  }
+
+  function findTrackModeTransitionStart() {
+    let start = trackS + TRACK_MODE_TRANSITION_AHEAD;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const blockedUntil = transitionOverlapsStation(start, start + TRACK_MODE_TRANSITION_LENGTH);
+      if (blockedUntil === null) return start;
+      start = blockedUntil + TRACK_MODE_STATION_CLEARANCE;
+    }
+    return start;
+  }
 
   function homeSignalS(stationIndex) {
     return stationIndex * STATION_CYCLE + STATION_START - TURNOUT_LENGTH - HOME_SIGNAL_MARGIN;
@@ -624,22 +663,32 @@ html.screensaver .hud { display: none; }
   }
 
   function rightMainCenterAt(s) {
-    if (quadrupleTrack) return MAIN_TRACK_RIGHT;
-    return MAIN_TRACK_RIGHT + (ISLAND_RIGHT_TRACK - MAIN_TRACK_RIGHT) * islandFactorAt(s);
+    return MAIN_TRACK_RIGHT + (ISLAND_RIGHT_TRACK - MAIN_TRACK_RIGHT)
+      * islandFactorAt(s) * (1 - quadrupleFactorAt(s));
   }
 
-  function leftOuterCenterAt(s) {
+  function leftOuterTargetCenterAt(s) {
     const index = Math.floor(s / STATION_CYCLE);
     return OUTER_TRACK_LEFT
       + (SIDING_LEFT - OUTER_TRACK_LEFT) * sidingFactor(s, index)
       + (QUAD_ISLAND_OUTER_LEFT - OUTER_TRACK_LEFT) * islandFactor(s, index);
   }
 
-  function rightOuterCenterAt(s) {
+  function rightOuterTargetCenterAt(s) {
     const index = Math.floor(s / STATION_CYCLE);
     return OUTER_TRACK_RIGHT
       + (SIDING_RIGHT - OUTER_TRACK_RIGHT) * sidingFactor(s, index)
       + (QUAD_ISLAND_OUTER_RIGHT - OUTER_TRACK_RIGHT) * islandFactor(s, index);
+  }
+
+  function leftOuterCenterAt(s) {
+    const q = quadrupleFactorAt(s);
+    return MAIN_TRACK_LEFT + (leftOuterTargetCenterAt(s) - MAIN_TRACK_LEFT) * q;
+  }
+
+  function rightOuterCenterAt(s) {
+    const q = quadrupleFactorAt(s);
+    return MAIN_TRACK_RIGHT + (rightOuterTargetCenterAt(s) - MAIN_TRACK_RIGHT) * q;
   }
 
   function sidingCenter(s, mainCenter, outerCenter, stationIndex) {
@@ -715,6 +764,17 @@ html.screensaver .hud { display: none; }
     if (started) ctx.stroke();
   }
 
+  function worldWeightedSpatialCurve(latAt, heightAt, weightAt, near, far, step, color, width, alpha) {
+    for (let d1 = near; d1 < far; d1 += step) {
+      const d2 = Math.min(far, d1 + step);
+      const s1 = trackS + d1, s2 = trackS + d2;
+      const weight = (weightAt(s1) + weightAt(s2)) * 0.5;
+      if (weight < 0.01) continue;
+      worldSegment(d1, latAt(s1), heightAt(s1), d2, latAt(s2), heightAt(s2),
+                   color, width, alpha * weight);
+    }
+  }
+
   function drawCatenaryDroppers(latAt, near, far, alpha, factorAt = null) {
     for (let n = Math.ceil((trackS + near) / DROPPER_SPACING); ; n++) {
       const s = n * DROPPER_SPACING;
@@ -739,27 +799,31 @@ html.screensaver .hud { display: none; }
     }
   }
 
-  function drawVariableSleepers(centerAt, range) {
+  function drawVariableSleepers(centerAt, range, factorAt = null) {
     const spacing = 0.78;
     for (let n = Math.ceil((trackS + 2) / spacing); ; n++) {
       const s = n * spacing;
       const d = s - trackS;
       if (d > range) break;
+      const factor = factorAt ? factorAt(s) : 1;
+      if (factor < 0.015) continue;
       const center = centerAt(s);
-      const a = 0.20 + 0.38 * fade(d, range);
+      const a = (0.20 + 0.38 * fade(d, range)) * factor;
       worldSegment(d, center - SLEEPER_HALF_WIDTH, 0.025,
                    d, center + SLEEPER_HALF_WIDTH, 0.025,
                    'rgb(155,165,185)', Math.max(0.45, 1.5 * FOCAL / d / 35), a);
     }
   }
 
-  function drawVariableRow(spacing, latAt, h, rad, col, inten, range) {
+  function drawVariableRow(spacing, latAt, h, rad, col, inten, range, factorAt = null) {
     for (let n = Math.ceil((trackS + 1) / spacing); ; n++) {
       const s = n * spacing;
       const d = s - trackS;
       if (d > range || d >= MAXD) break;
+      const factor = factorAt ? factorAt(s) : 1;
+      if (factor < 0.015) continue;
       if (!project(d, latAt(s), h)) continue;
-      glow(P.x, P.y, rad * P.sc, col, inten * fade(d, range));
+      glow(P.x, P.y, rad * P.sc, col, inten * factor * fade(d, range));
     }
   }
 
@@ -819,11 +883,12 @@ html.screensaver .hud { display: none; }
       const base = stationIndex * STATION_CYCLE;
       const routeStart = base + STATION_START - TURNOUT_LENGTH;
       const routeEnd = base + STATION_END + TURNOUT_LENGTH;
+      const stationQuadruple = isQuadrupleAt(base + (STATION_START + STATION_END) * 0.5);
       const near = Math.max(2, routeStart - trackS);
       const far = Math.min(MAXD - 1, routeEnd - trackS);
       if (near >= far) continue;
 
-      if (quadrupleTrack) {
+      if (stationQuadruple) {
         drawTerminalCrossovers(stationIndex);
         continue;
       }
@@ -974,7 +1039,8 @@ html.screensaver .hud { display: none; }
       const stationIndex = Math.round(b / STATION_CYCLE);
       const terminal = isTerminalStation(stationIndex);
       const island = isIslandStation(stationIndex);
-      const stationPlatforms = quadrupleTrack
+      const stationQuadruple = isQuadrupleAt(b + (STATION_START + STATION_END) * 0.5);
+      const stationPlatforms = stationQuadruple
         ? (island ? QUAD_ISLAND_PLATFORMS : terminal ? PLATFORMS : QUAD_SIDE_PLATFORMS)
         : (island ? [ISLAND_PLATFORM] : PLATFORMS);
       const doubleSided = terminal || island;
@@ -1006,6 +1072,7 @@ html.screensaver .hud { display: none; }
     // A cool, narrow pool of cab light over the ballast.
     groundPool(15, 0, 4.2, '205,225,255', 0.045);
     groundPool(34, 0, 6.0, '205,225,255', 0.022);
+    const outerModeVisible = quadrupleTrack || !!trackModeTransition;
 
     // Our main track stays fixed. The opposing main track moves outward only
     // through island-platform stations, leaving room for the center platform.
@@ -1017,23 +1084,34 @@ html.screensaver .hud { display: none; }
                          'rgb(185,205,235)', 1.15, 0.36);
       drawVariableRow(2.2, s => rightMainCenterAt(s) + railOffset,
                       0.08, 0.035, C.refW, 0.36, 220);
-      if (quadrupleTrack) {
+      if (trackModeTransition) {
+        worldWeightedSpatialCurve(s => leftOuterCenterAt(s) + railOffset, () => 0.06,
+                                  outerTrackVisibilityAt, 2, MAXD - 1, 1.8,
+                                  'rgb(165,190,225)', 1.05, 0.34);
+        worldWeightedSpatialCurve(s => rightOuterCenterAt(s) + railOffset, () => 0.06,
+                                  outerTrackVisibilityAt, 2, MAXD - 1, 1.8,
+                                  'rgb(165,190,225)', 1.05, 0.28);
+      } else if (quadrupleTrack) {
         worldVariableCurve(s => leftOuterCenterAt(s) + railOffset, 0.06, 2, MAXD - 1, 2.0,
                            'rgb(165,190,225)', 1.05, 0.34);
         worldVariableCurve(s => rightOuterCenterAt(s) + railOffset, 0.06, 2, MAXD - 1, 2.0,
                            'rgb(165,190,225)', 1.05, 0.28);
+      }
+      if (outerModeVisible) {
+        const factorAt = trackModeTransition ? outerTrackVisibilityAt : null;
         drawVariableRow(2.2, s => leftOuterCenterAt(s) + railOffset,
-                        0.08, 0.032, C.refW, 0.34, 200);
+                        0.08, 0.032, C.refW, 0.34, 200, factorAt);
         drawVariableRow(2.2, s => rightOuterCenterAt(s) + railOffset,
-                        0.08, 0.032, C.refO, 0.27, 200);
+                        0.08, 0.032, C.refO, 0.27, 200, factorAt);
       }
     }
     drawTerminalStationTracks();
     drawSleepers(MAIN_TRACK_LEFT, 145);
     drawVariableSleepers(rightMainCenterAt, 105);
-    if (quadrupleTrack) {
-      drawVariableSleepers(leftOuterCenterAt, 105);
-      drawVariableSleepers(rightOuterCenterAt, 95);
+    if (outerModeVisible) {
+      const factorAt = trackModeTransition ? outerTrackVisibilityAt : null;
+      drawVariableSleepers(leftOuterCenterAt, 105, factorAt);
+      drawVariableSleepers(rightOuterCenterAt, 95, factorAt);
     }
     drawRow(14, 0, 0, -1.55, 0.35, 0.045, C.refW, 0.48, 360);
     drawVariableRow(14, s => rightMainCenterAt(s) + 1.55,
@@ -1055,7 +1133,20 @@ html.screensaver .hud { display: none; }
                       'rgb(100,125,155)', 0.55, 0.18);
     drawCatenaryDroppers(leftCatenaryAt, 3, MAXD - 1, 0.24);
     drawCatenaryDroppers(rightCatenaryAt, 3, MAXD - 1, 0.17);
-    if (quadrupleTrack) {
+    if (trackModeTransition) {
+      worldWeightedSpatialCurve(leftOuterCatenaryAt, () => CONTACT_WIRE_H,
+                                outerTrackVisibilityAt, 3, MAXD - 1, 2.3,
+                                'rgb(125,155,190)', 0.62, 0.22);
+      worldWeightedSpatialCurve(rightOuterCatenaryAt, () => CONTACT_WIRE_H,
+                                outerTrackVisibilityAt, 3, MAXD - 1, 2.3,
+                                'rgb(125,155,190)', 0.58, 0.18);
+      worldWeightedSpatialCurve(leftOuterCatenaryAt, messengerHeightAt,
+                                outerTrackVisibilityAt, 3, MAXD - 1, 2.0,
+                                'rgb(90,115,145)', 0.52, 0.17);
+      worldWeightedSpatialCurve(rightOuterCatenaryAt, messengerHeightAt,
+                                outerTrackVisibilityAt, 3, MAXD - 1, 2.0,
+                                'rgb(90,115,145)', 0.50, 0.14);
+    } else if (quadrupleTrack) {
       worldVariableCurve(leftOuterCatenaryAt, CONTACT_WIRE_H, 3, MAXD - 1, 2.5,
                          'rgb(125,155,190)', 0.62, 0.22);
       worldVariableCurve(rightOuterCatenaryAt, CONTACT_WIRE_H, 3, MAXD - 1, 2.5,
@@ -1064,8 +1155,11 @@ html.screensaver .hud { display: none; }
                         'rgb(90,115,145)', 0.52, 0.17);
       worldSpatialCurve(rightOuterCatenaryAt, messengerHeightAt, 3, MAXD - 1, 2.0,
                         'rgb(90,115,145)', 0.50, 0.14);
-      drawCatenaryDroppers(leftOuterCatenaryAt, 3, MAXD - 1, 0.16);
-      drawCatenaryDroppers(rightOuterCatenaryAt, 3, MAXD - 1, 0.13);
+    }
+    if (outerModeVisible) {
+      const factorAt = trackModeTransition ? outerTrackVisibilityAt : null;
+      drawCatenaryDroppers(leftOuterCatenaryAt, 3, MAXD - 1, 0.16, factorAt);
+      drawCatenaryDroppers(rightOuterCatenaryAt, 3, MAXD - 1, 0.13, factorAt);
     }
 
     const GANTRY_LEFT = -2.25, GANTRY_RIGHT = 6.35;
@@ -1079,14 +1173,15 @@ html.screensaver .hud { display: none; }
       const a = 0.42 * fade(d, 560);
       const passing = terminalFactorAt(s);
       const island = islandFactorAt(s);
-      const leftPole = quadrupleTrack
-        ? leftOuterCenterAt(s) - 2.25
-        : GANTRY_LEFT + (PASSING_GANTRY_LEFT - GANTRY_LEFT) * passing;
-      const rightPole = quadrupleTrack
-        ? rightOuterCenterAt(s) + 2.25
-        : GANTRY_RIGHT
-          + (PASSING_GANTRY_RIGHT - GANTRY_RIGHT) * passing
-          + (ISLAND_GANTRY_RIGHT - GANTRY_RIGHT) * island;
+      const q = quadrupleFactorAt(s);
+      const doubleLeftPole = GANTRY_LEFT + (PASSING_GANTRY_LEFT - GANTRY_LEFT) * passing;
+      const doubleRightPole = GANTRY_RIGHT
+        + (PASSING_GANTRY_RIGHT - GANTRY_RIGHT) * passing
+        + (ISLAND_GANTRY_RIGHT - GANTRY_RIGHT) * island;
+      const quadrupleLeftPole = leftOuterTargetCenterAt(s) - 2.25;
+      const quadrupleRightPole = rightOuterTargetCenterAt(s) + 2.25;
+      const leftPole = doubleLeftPole + (quadrupleLeftPole - doubleLeftPole) * q;
+      const rightPole = doubleRightPole + (quadrupleRightPole - doubleRightPole) * q;
       const leftSidingCenter = MAIN_TRACK_LEFT + (SIDING_LEFT - MAIN_TRACK_LEFT) * passing;
       const rightSidingCenter = MAIN_TRACK_RIGHT + (SIDING_RIGHT - MAIN_TRACK_RIGHT) * passing;
       const rightMainCenter = rightMainCenterAt(s);
@@ -1108,17 +1203,17 @@ html.screensaver .hud { display: none; }
                    'rgb(135,155,180)', 0.7, a);
       worldSegment(d, rightContact, 6.1, d, rightContact, MESSENGER_SUPPORT_H,
                    'rgb(135,155,180)', 0.7, a);
-      if (quadrupleTrack) {
+      if (q > 0.015) {
         worldSegment(d, leftOuterContact, 6.1, d, leftOuterContact, MESSENGER_SUPPORT_H,
-                     'rgb(135,155,180)', 0.65, a);
+                     'rgb(135,155,180)', 0.65, a * outerTrackVisibilityAt(s));
         worldSegment(d, rightOuterContact, 6.1, d, rightOuterContact, MESSENGER_SUPPORT_H,
-                     'rgb(135,155,180)', 0.65, a);
+                     'rgb(135,155,180)', 0.65, a * outerTrackVisibilityAt(s));
       }
-      if (!quadrupleTrack && passing > 0.015) {
+      if (q < 0.985 && passing > 0.015) {
         worldSegment(d, leftSidingContact, 6.1, d, leftSidingContact, MESSENGER_SUPPORT_H,
-                     'rgb(135,155,180)', 0.65, a * passing);
+                     'rgb(135,155,180)', 0.65, a * passing * (1 - q));
         worldSegment(d, rightSidingContact, 6.1, d, rightSidingContact, MESSENGER_SUPPORT_H,
-                     'rgb(135,155,180)', 0.65, a * passing);
+                     'rgb(135,155,180)', 0.65, a * passing * (1 - q));
       }
       if (project(d, leftPole, 5.7)) glow(P.x, P.y, 0.045 * P.sc, C.cyan, 0.44 * fade(d, 500));
       if (project(d, rightPole, 5.7)) glow(P.x, P.y, 0.045 * P.sc, C.cyan, 0.32 * fade(d, 500));
@@ -1215,12 +1310,14 @@ html.screensaver .hud { display: none; }
     const lastIndex = Math.floor((trackS + MAXD) / STATION_CYCLE) + 1;
     for (let stationIndex = firstIndex; stationIndex <= lastIndex; stationIndex++) {
       if (!isTerminalStation(stationIndex)) continue;
+      const stationS = stationIndex * STATION_CYCLE + (STATION_START + STATION_END) * 0.5;
+      const stationQuadruple = isQuadrupleAt(stationS);
       // Each direction is decided independently, so a station may contain no
       // stopped train, one train, or trains on both outer sidings.
-      drawStoppedTrain(stationIndex, quadrupleTrack ? OUTER_TRACK_LEFT : MAIN_TRACK_LEFT,
+      drawStoppedTrain(stationIndex, stationQuadruple ? OUTER_TRACK_LEFT : MAIN_TRACK_LEFT,
                        SIDING_LEFT,
                        false, 301);
-      drawStoppedTrain(stationIndex, quadrupleTrack ? OUTER_TRACK_RIGHT : MAIN_TRACK_RIGHT,
+      drawStoppedTrain(stationIndex, stationQuadruple ? OUTER_TRACK_RIGHT : MAIN_TRACK_RIGHT,
                        SIDING_RIGHT,
                        true, 303);
     }
@@ -1265,15 +1362,32 @@ html.screensaver .hud { display: none; }
   const trackModeBtn = document.getElementById('trackMode');
 
   function updateTrackModeButton() {
-    trackModeBtn.textContent = quadrupleTrack ? T.quadrupleTrack : T.doubleTrack;
-    trackModeBtn.setAttribute('aria-pressed', String(quadrupleTrack));
-    trackModeBtn.setAttribute('aria-label', quadrupleTrack ? T.switchToDouble : T.switchToQuadruple);
+    const displayedMode = trackModeTransition ? trackModeTransition.to : quadrupleTrack;
+    trackModeBtn.textContent = (displayedMode ? T.quadrupleTrack : T.doubleTrack)
+      + (trackModeTransition ? '…' : '');
+    trackModeBtn.disabled = !!trackModeTransition;
+    trackModeBtn.setAttribute('aria-pressed', String(displayedMode));
+    trackModeBtn.setAttribute('aria-label', displayedMode ? T.switchToDouble : T.switchToQuadruple);
   }
 
   trackModeBtn.addEventListener('click', () => {
-    quadrupleTrack = !quadrupleTrack;
+    if (trackModeTransition) return;
+    const start = findTrackModeTransitionStart();
+    trackModeTransition = {
+      start,
+      end: start + TRACK_MODE_TRANSITION_LENGTH,
+      from: quadrupleTrack,
+      to: !quadrupleTrack,
+    };
     updateTrackModeButton();
   });
+
+  function updateTrackModeTransition() {
+    if (!trackModeTransition || trackS < trackModeTransition.end) return;
+    quadrupleTrack = trackModeTransition.to;
+    trackModeTransition = null;
+    updateTrackModeButton();
+  }
   updateTrackModeButton();
 
   function togglePause() {
@@ -1379,6 +1493,7 @@ html.screensaver .hud { display: none; }
       updateMeteors(dt);
       updateUfo(dt);
     }
+    updateTrackModeTransition();
     updateTrackShape();
 
     ctx.globalCompositeOperation = 'source-over';
