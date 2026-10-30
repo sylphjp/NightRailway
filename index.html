@@ -57,6 +57,7 @@ html.screensaver .hud { display: none; }
 }
 .hud button:hover { border-color: var(--amber); color: var(--amber); }
 .hud button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.hud button.mode { width: auto; min-width: 5.5em; padding: 0 10px; font-family: var(--sans); font-size: 13px; }
 .keys { font-size: 11px; color: var(--dim); letter-spacing: .04em; }
 @media (max-width: 520px) { .keys { display: none; } }
 </style>
@@ -71,6 +72,7 @@ html.screensaver .hud { display: none; }
   <button id="faster" type="button" aria-label="加速">＋</button>
   <button id="pause" type="button" aria-label="一時停止">Ⅱ</button>
   <button id="fs" type="button" aria-label="全画面">⛶</button>
+  <button id="trackMode" class="mode" type="button" aria-label="複々線に切り替え" aria-pressed="false">複線</button>
   <div class="keys" id="keys">↑↓ 速度 ・ Space 停止 ・ F 全画面</div>
 </div>
 
@@ -86,30 +88,37 @@ html.screensaver .hud { display: none; }
     ja: { title: 'Night Railway', scene: '光る点で描いた夜の鉄道を走る前面展望',
           slower: '減速', faster: '加速', pause: '一時停止', resume: '再開',
           fs: '全画面', fsExit: '全画面を解除',
+          doubleTrack: '複線', quadrupleTrack: '複々線', switchToDouble: '複線に切り替え', switchToQuadruple: '複々線に切り替え',
           keys: '↑↓ 速度 ・ Space 停止 ・ F 全画面' },
     en: { title: 'Night Railway', scene: 'A night railway cab view drawn with points of light',
           slower: 'Slow down', faster: 'Speed up', pause: 'Pause', resume: 'Resume',
           fs: 'Fullscreen', fsExit: 'Exit fullscreen',
+          doubleTrack: 'Double track', quadrupleTrack: 'Four tracks', switchToDouble: 'Switch to double track', switchToQuadruple: 'Switch to four tracks',
           keys: '↑↓ speed · Space pause · F fullscreen' },
     zh: { title: 'Night Railway', scene: '用光点描绘的夜间铁路驾驶室前方景色',
           slower: '减速', faster: '加速', pause: '暂停', resume: '继续',
           fs: '全屏', fsExit: '退出全屏',
+          doubleTrack: '双线', quadrupleTrack: '四线', switchToDouble: '切换为双线', switchToQuadruple: '切换为四线',
           keys: '↑↓ 速度 · 空格 暂停 · F 全屏' },
     ko: { title: 'Night Railway', scene: '빛나는 점으로 그린 야간 철도 전면 전망',
           slower: '감속', faster: '가속', pause: '일시 정지', resume: '재개',
           fs: '전체 화면', fsExit: '전체 화면 종료',
+          doubleTrack: '복선', quadrupleTrack: '복복선', switchToDouble: '복선으로 전환', switchToQuadruple: '복복선으로 전환',
           keys: '↑↓ 속도 · Space 일시 정지 · F 전체 화면' },
     fr: { title: 'Night Railway', scene: 'Une vue nocturne depuis la cabine d’un train, dessinée avec des points lumineux',
           slower: 'Ralentir', faster: 'Accélérer', pause: 'Pause', resume: 'Reprendre',
           fs: 'Plein écran', fsExit: 'Quitter le plein écran',
+          doubleTrack: 'Double voie', quadrupleTrack: 'Quatre voies', switchToDouble: 'Passer à deux voies', switchToQuadruple: 'Passer à quatre voies',
           keys: '↑↓ vitesse · Espace pause · F plein écran' },
     de: { title: 'Night Railway', scene: 'Eine nächtliche Führerstandsansicht aus Lichtpunkten',
           slower: 'Langsamer', faster: 'Schneller', pause: 'Pause', resume: 'Fortsetzen',
           fs: 'Vollbild', fsExit: 'Vollbild beenden',
+          doubleTrack: 'Zweigleisig', quadrupleTrack: 'Viergleisig', switchToDouble: 'Auf zwei Gleise wechseln', switchToQuadruple: 'Auf vier Gleise wechseln',
           keys: '↑↓ Tempo · Leertaste Pause · F Vollbild' },
     es: { title: 'Night Railway', scene: 'Una vista nocturna desde la cabina de un tren dibujada con puntos de luz',
           slower: 'Reducir velocidad', faster: 'Acelerar', pause: 'Pausa', resume: 'Reanudar',
           fs: 'Pantalla completa', fsExit: 'Salir de pantalla completa',
+          doubleTrack: 'Vía doble', quadrupleTrack: 'Cuatro vías', switchToDouble: 'Cambiar a vía doble', switchToQuadruple: 'Cambiar a cuatro vías',
           keys: '↑↓ velocidad · Espacio pausa · F pantalla completa' },
   };
   // pick the first supported language from the browser's preference list; fall back to English
@@ -124,6 +133,8 @@ html.screensaver .hud { display: none; }
   document.getElementById('faster').setAttribute('aria-label', T.faster);
   document.getElementById('pause').setAttribute('aria-label', T.pause);
   document.getElementById('fs').setAttribute('aria-label', T.fs);
+  document.getElementById('trackMode').setAttribute('aria-label', T.switchToQuadruple);
+  document.getElementById('trackMode').textContent = T.doubleTrack;
   document.getElementById('keys').textContent = T.keys;
   // ---------------- Screen ----------------
   const cv = document.getElementById('scene');
@@ -520,14 +531,20 @@ html.screensaver .hud { display: none; }
   const SLEEPER_HALF_WIDTH = 0.75; // 1500 mm overall sleeper width
   const MAIN_TRACK_LEFT = 0;
   const MAIN_TRACK_RIGHT = 4.1;
+  const OUTER_TRACK_LEFT = -4.1;
+  const OUTER_TRACK_RIGHT = 8.2;
+  let quadrupleTrack = false;
 
-  // Three station types repeat in order: the original side platforms, a
-  // four-track passing station, and a center island platform. Passing-station
-  // sidings branch outward; island stations move only the opposing main track.
+  // Station types repeat A / B / C: side-platform, terminal with sidings, and
+  // island-platform. The four-track layout changes their platform placement,
+  // while B always retains its branching sidings.
   const STATION_CYCLE = 1350;
   const STATION_START = 260;
   const STATION_END = 455;
   const STATION_TYPE_COUNT = 3;
+  const STATION_TYPE_SIDE = 0;      // A: side-platform station
+  const STATION_TYPE_TERMINAL = 1;  // B: terminal station with sidings
+  const STATION_TYPE_ISLAND = 2;    // C: island-platform station
   const TURNOUT_LENGTH = 180;
   const BLOCK_SIGNAL_SPACING = 235;
   const STOPPED_TRAIN_PROBABILITY = 0.30;
@@ -543,7 +560,11 @@ html.screensaver .hud { display: none; }
   const HOME_SIDING_LAT = -2.75;
   const SIDING_LEFT = -5.9;
   const SIDING_RIGHT = 10.0;
+  const QUAD_TERMINAL_SIDING_LEFT = -8.2;
+  const QUAD_TERMINAL_SIDING_RIGHT = 12.3;
   const ISLAND_RIGHT_TRACK = 8.1;
+  const QUAD_ISLAND_OUTER_LEFT = -8.1;
+  const QUAD_ISLAND_OUTER_RIGHT = 12.2;
   const PLATFORMS = [
     { edge: -2.25, outer: -3.65, post: -3.35, lamp: -3.30, edgeLight: -2.18, outerLight: -3.72 },
     { edge:  6.35, outer:  7.75, post:  7.45, lamp:  7.40, edgeLight:  6.28, outerLight:  7.82 },
@@ -551,19 +572,32 @@ html.screensaver .hud { display: none; }
   const ISLAND_PLATFORM = {
     edge: 2.25, outer: 5.85, post: 4.05, lamp: 4.05, edgeLight: 2.18, outerLight: 5.92,
   };
+  const QUAD_SIDE_PLATFORMS = [
+    { edge: -6.35, outer: -7.75, post: -7.45, lamp: -7.40, edgeLight: -6.28, outerLight: -7.82 },
+    { edge: 10.45, outer: 11.85, post: 11.55, lamp: 11.50, edgeLight: 10.38, outerLight: 11.92 },
+  ];
+  const QUAD_TERMINAL_PLATFORMS = [
+    { edge: -5.45, outer: -6.85, post: -6.55, lamp: -6.50, edgeLight: -5.38, outerLight: -6.92 },
+    { edge:  9.55, outer: 10.95, post: 10.65, lamp: 10.60, edgeLight:  9.48, outerLight: 11.02 },
+  ];
+  const QUAD_ISLAND_PLATFORMS = [
+    { edge: -2.25, outer: -5.85, post: -4.05, lamp: -4.05, edgeLight: -2.18, outerLight: -5.92 },
+    { edge:  6.35, outer:  9.95, post:  8.15, lamp:  8.15, edgeLight:  6.28, outerLight: 10.02 },
+  ];
 
   const positiveMod = (n, m) => ((n % m) + m) % m;
-  const isPassingStation = index => positiveMod(index, STATION_TYPE_COUNT) === 1;
-  const isIslandStation = index => positiveMod(index, STATION_TYPE_COUNT) === 2;
+  const isSideStation = index => positiveMod(index, STATION_TYPE_COUNT) === STATION_TYPE_SIDE;
+  const isTerminalStation = index => positiveMod(index, STATION_TYPE_COUNT) === STATION_TYPE_TERMINAL;
+  const isIslandStation = index => positiveMod(index, STATION_TYPE_COUNT) === STATION_TYPE_ISLAND;
 
   function homeSignalS(stationIndex) {
     return stationIndex * STATION_CYCLE + STATION_START - TURNOUT_LENGTH - HOME_SIGNAL_MARGIN;
   }
 
-  function isNearPassingHomeSignal(s, radius = BLOCK_SIGNAL_SPACING) {
+  function isNearTerminalHomeSignal(s, radius = BLOCK_SIGNAL_SPACING) {
     const nearestIndex = Math.floor(s / STATION_CYCLE);
     for (let stationIndex = nearestIndex - 1; stationIndex <= nearestIndex + 1; stationIndex++) {
-      if (isPassingStation(stationIndex) && Math.abs(s - homeSignalS(stationIndex)) <= radius)
+      if (isTerminalStation(stationIndex) && Math.abs(s - homeSignalS(stationIndex)) <= radius)
         return true;
     }
     return false;
@@ -582,10 +616,10 @@ html.screensaver .hud { display: none; }
     return smooth((turnoutEnd - s) / TURNOUT_LENGTH);
   }
 
-  const sidingFactor = (s, stationIndex) => stationShapeFactor(s, stationIndex, isPassingStation);
+  const sidingFactor = (s, stationIndex) => stationShapeFactor(s, stationIndex, isTerminalStation);
   const islandFactor = (s, stationIndex) => stationShapeFactor(s, stationIndex, isIslandStation);
 
-  function passingFactorAt(s) {
+  function terminalFactorAt(s) {
     const index = Math.floor(s / STATION_CYCLE);
     return sidingFactor(s, index);
   }
@@ -596,7 +630,20 @@ html.screensaver .hud { display: none; }
   }
 
   function rightMainCenterAt(s) {
+    if (quadrupleTrack) return MAIN_TRACK_RIGHT;
     return MAIN_TRACK_RIGHT + (ISLAND_RIGHT_TRACK - MAIN_TRACK_RIGHT) * islandFactorAt(s);
+  }
+
+  function leftOuterCenterAt(s) {
+    const index = Math.floor(s / STATION_CYCLE);
+    return OUTER_TRACK_LEFT
+      + (QUAD_ISLAND_OUTER_LEFT - OUTER_TRACK_LEFT) * islandFactor(s, index);
+  }
+
+  function rightOuterCenterAt(s) {
+    const index = Math.floor(s / STATION_CYCLE);
+    return OUTER_TRACK_RIGHT
+      + (QUAD_ISLAND_OUTER_RIGHT - OUTER_TRACK_RIGHT) * islandFactor(s, index);
   }
 
   function sidingCenter(s, mainCenter, outerCenter, stationIndex) {
@@ -720,14 +767,14 @@ html.screensaver .hud { display: none; }
     }
   }
 
-  function drawPassingStationTracks() {
+  function drawTerminalStationTracks() {
     const firstIndex = Math.floor(trackS / STATION_CYCLE) - 1;
     const lastIndex = Math.floor((trackS + MAXD) / STATION_CYCLE) + 1;
     const sleeperSpacing = 0.78;
     const reflectorSpacing = 2.2;
 
     for (let stationIndex = firstIndex; stationIndex <= lastIndex; stationIndex++) {
-      if (!isPassingStation(stationIndex)) continue;
+      if (!isTerminalStation(stationIndex)) continue;
       const base = stationIndex * STATION_CYCLE;
       const routeStart = base + STATION_START - TURNOUT_LENGTH;
       const routeEnd = base + STATION_END + TURNOUT_LENGTH;
@@ -735,10 +782,19 @@ html.screensaver .hud { display: none; }
       const far = Math.min(MAXD - 1, routeEnd - trackS);
       if (near >= far) continue;
 
-      const routes = [
-        { main: MAIN_TRACK_LEFT, outer: SIDING_LEFT, alpha: 0.52 },
-        { main: MAIN_TRACK_RIGHT, outer: SIDING_RIGHT, alpha: 0.34 },
-      ];
+      // B-type terminal stations retain a visible turnout in both modes. In
+      // four-track mode the siding branches from the continuous outer line,
+      // producing a distinctive six-track station instead of another 2x4
+      // island-platform layout.
+      const routes = quadrupleTrack
+        ? [
+            { main: OUTER_TRACK_LEFT, outer: QUAD_TERMINAL_SIDING_LEFT, alpha: 0.46 },
+            { main: OUTER_TRACK_RIGHT, outer: QUAD_TERMINAL_SIDING_RIGHT, alpha: 0.32 },
+          ]
+        : [
+            { main: MAIN_TRACK_LEFT, outer: SIDING_LEFT, alpha: 0.52 },
+            { main: MAIN_TRACK_RIGHT, outer: SIDING_RIGHT, alpha: 0.34 },
+          ];
 
       for (const route of routes) {
         const centerAt = s => sidingCenter(s, route.main, route.outer, stationIndex);
@@ -863,11 +919,11 @@ html.screensaver .hud { display: none; }
       glow(P.x, P.y, 0.105 * P.sc, C.red, 0.96 * a);
   }
 
-  function drawPassingHomeSignals() {
+  function drawTerminalHomeSignals() {
     const firstIndex = Math.floor(trackS / STATION_CYCLE) - 1;
     const lastIndex = Math.floor((trackS + MAXD) / STATION_CYCLE) + 1;
     for (let stationIndex = firstIndex; stationIndex <= lastIndex; stationIndex++) {
-      if (!isPassingStation(stationIndex)) continue;
+      if (!isTerminalStation(stationIndex)) continue;
       const d = homeSignalS(stationIndex) - trackS;
       if (d <= 1 || d >= MAXD) continue;
       drawSignal(stationIndex * 101 + 17, d, HOME_MAIN_LAT);
@@ -879,10 +935,12 @@ html.screensaver .hud { display: none; }
     const base = Math.floor(trackS / STATION_CYCLE) * STATION_CYCLE;
     for (let b = base - STATION_CYCLE; b <= trackS + MAXD; b += STATION_CYCLE) {
       const stationIndex = Math.round(b / STATION_CYCLE);
-      const passing = isPassingStation(stationIndex);
+      const terminal = isTerminalStation(stationIndex);
       const island = isIslandStation(stationIndex);
-      const stationPlatforms = island ? [ISLAND_PLATFORM] : PLATFORMS;
-      const doubleSided = passing || island;
+      const stationPlatforms = quadrupleTrack
+        ? (island ? QUAD_ISLAND_PLATFORMS : terminal ? QUAD_TERMINAL_PLATFORMS : QUAD_SIDE_PLATFORMS)
+        : (island ? [ISLAND_PLATFORM] : PLATFORMS);
+      const doubleSided = terminal || island;
       const ds = b + STATION_START - trackS, de = b + STATION_END - trackS;
       if (de < 2 || ds > MAXD) continue;
       const near = Math.max(2, ds), far = Math.min(MAXD - 1, de);
@@ -922,10 +980,24 @@ html.screensaver .hud { display: none; }
                          'rgb(185,205,235)', 1.15, 0.36);
       drawVariableRow(2.2, s => rightMainCenterAt(s) + railOffset,
                       0.08, 0.035, C.refW, 0.36, 220);
+      if (quadrupleTrack) {
+        worldVariableCurve(s => leftOuterCenterAt(s) + railOffset, 0.06, 2, MAXD - 1, 2.0,
+                           'rgb(165,190,225)', 1.05, 0.34);
+        worldVariableCurve(s => rightOuterCenterAt(s) + railOffset, 0.06, 2, MAXD - 1, 2.0,
+                           'rgb(165,190,225)', 1.05, 0.28);
+        drawVariableRow(2.2, s => leftOuterCenterAt(s) + railOffset,
+                        0.08, 0.032, C.refW, 0.34, 200);
+        drawVariableRow(2.2, s => rightOuterCenterAt(s) + railOffset,
+                        0.08, 0.032, C.refO, 0.27, 200);
+      }
     }
-    drawPassingStationTracks();
+    drawTerminalStationTracks();
     drawSleepers(MAIN_TRACK_LEFT, 145);
     drawVariableSleepers(rightMainCenterAt, 105);
+    if (quadrupleTrack) {
+      drawVariableSleepers(leftOuterCenterAt, 105);
+      drawVariableSleepers(rightOuterCenterAt, 95);
+    }
     drawRow(14, 0, 0, -1.55, 0.35, 0.045, C.refW, 0.48, 360);
     drawVariableRow(14, s => rightMainCenterAt(s) + 1.55,
                     0.35, 0.045, C.refO, 0.30, 300);
@@ -934,6 +1006,8 @@ html.screensaver .hud { display: none; }
     // regular droppers create a recognizable overhead-line profile.
     const leftCatenaryAt = s => MAIN_TRACK_LEFT + catenaryStaggerAt(s);
     const rightCatenaryAt = s => rightMainCenterAt(s) + catenaryStaggerAt(s);
+    const leftOuterCatenaryAt = s => leftOuterCenterAt(s) + catenaryStaggerAt(s);
+    const rightOuterCatenaryAt = s => rightOuterCenterAt(s) + catenaryStaggerAt(s);
     worldVariableCurve(leftCatenaryAt, CONTACT_WIRE_H, 3, MAXD - 1, 2.5,
                        'rgb(135,165,200)', 0.75, 0.34);
     worldVariableCurve(rightCatenaryAt, CONTACT_WIRE_H, 3, MAXD - 1, 2.5,
@@ -944,6 +1018,18 @@ html.screensaver .hud { display: none; }
                       'rgb(100,125,155)', 0.55, 0.18);
     drawCatenaryDroppers(leftCatenaryAt, 3, MAXD - 1, 0.24);
     drawCatenaryDroppers(rightCatenaryAt, 3, MAXD - 1, 0.17);
+    if (quadrupleTrack) {
+      worldVariableCurve(leftOuterCatenaryAt, CONTACT_WIRE_H, 3, MAXD - 1, 2.5,
+                         'rgb(125,155,190)', 0.62, 0.22);
+      worldVariableCurve(rightOuterCatenaryAt, CONTACT_WIRE_H, 3, MAXD - 1, 2.5,
+                         'rgb(125,155,190)', 0.58, 0.18);
+      worldSpatialCurve(leftOuterCatenaryAt, messengerHeightAt, 3, MAXD - 1, 2.0,
+                        'rgb(90,115,145)', 0.52, 0.17);
+      worldSpatialCurve(rightOuterCatenaryAt, messengerHeightAt, 3, MAXD - 1, 2.0,
+                        'rgb(90,115,145)', 0.50, 0.14);
+      drawCatenaryDroppers(leftOuterCatenaryAt, 3, MAXD - 1, 0.16);
+      drawCatenaryDroppers(rightOuterCatenaryAt, 3, MAXD - 1, 0.13);
+    }
 
     const GANTRY_LEFT = -2.25, GANTRY_RIGHT = 6.35;
     const PASSING_GANTRY_LEFT = SIDING_LEFT - 2.25;
@@ -954,20 +1040,34 @@ html.screensaver .hud { display: none; }
       const d = s - trackS;
       if (d >= MAXD) break;
       const a = 0.42 * fade(d, 560);
-      const passing = passingFactorAt(s);
+      const passing = terminalFactorAt(s);
       const island = islandFactorAt(s);
-      const leftPole = GANTRY_LEFT + (PASSING_GANTRY_LEFT - GANTRY_LEFT) * passing;
-      const rightPole = GANTRY_RIGHT
-        + (PASSING_GANTRY_RIGHT - GANTRY_RIGHT) * passing
-        + (ISLAND_GANTRY_RIGHT - GANTRY_RIGHT) * island;
-      const leftSidingCenter = MAIN_TRACK_LEFT + (SIDING_LEFT - MAIN_TRACK_LEFT) * passing;
-      const rightSidingCenter = MAIN_TRACK_RIGHT + (SIDING_RIGHT - MAIN_TRACK_RIGHT) * passing;
+      const leftPole = quadrupleTrack
+        ? leftOuterCenterAt(s) - 2.25
+          + (QUAD_TERMINAL_SIDING_LEFT - OUTER_TRACK_LEFT) * passing
+        : GANTRY_LEFT + (PASSING_GANTRY_LEFT - GANTRY_LEFT) * passing;
+      const rightPole = quadrupleTrack
+        ? rightOuterCenterAt(s) + 2.25
+          + (QUAD_TERMINAL_SIDING_RIGHT - OUTER_TRACK_RIGHT) * passing
+        : GANTRY_RIGHT
+          + (PASSING_GANTRY_RIGHT - GANTRY_RIGHT) * passing
+          + (ISLAND_GANTRY_RIGHT - GANTRY_RIGHT) * island;
+      const leftSidingOrigin = quadrupleTrack ? OUTER_TRACK_LEFT : MAIN_TRACK_LEFT;
+      const rightSidingOrigin = quadrupleTrack ? OUTER_TRACK_RIGHT : MAIN_TRACK_RIGHT;
+      const leftSidingDestination = quadrupleTrack ? QUAD_TERMINAL_SIDING_LEFT : SIDING_LEFT;
+      const rightSidingDestination = quadrupleTrack ? QUAD_TERMINAL_SIDING_RIGHT : SIDING_RIGHT;
+      const leftSidingCenter = leftSidingOrigin
+        + (leftSidingDestination - leftSidingOrigin) * passing;
+      const rightSidingCenter = rightSidingOrigin
+        + (rightSidingDestination - rightSidingOrigin) * passing;
       const rightMainCenter = rightMainCenterAt(s);
       const stagger = catenaryStaggerAt(s);
       const leftContact = MAIN_TRACK_LEFT + stagger;
       const rightContact = rightMainCenter + stagger;
       const leftSidingContact = leftSidingCenter + stagger;
       const rightSidingContact = rightSidingCenter + stagger;
+      const leftOuterContact = leftOuterCenterAt(s) + stagger;
+      const rightOuterContact = rightOuterCenterAt(s) + stagger;
 
       // Portal gantries widen with passing sidings or the displaced island track.
       worldSegment(d, leftPole, 0.1, d, leftPole, 6.4, 'rgb(110,135,165)', 1.0, a);
@@ -979,6 +1079,12 @@ html.screensaver .hud { display: none; }
                    'rgb(135,155,180)', 0.7, a);
       worldSegment(d, rightContact, 6.1, d, rightContact, MESSENGER_SUPPORT_H,
                    'rgb(135,155,180)', 0.7, a);
+      if (quadrupleTrack) {
+        worldSegment(d, leftOuterContact, 6.1, d, leftOuterContact, MESSENGER_SUPPORT_H,
+                     'rgb(135,155,180)', 0.65, a);
+        worldSegment(d, rightOuterContact, 6.1, d, rightOuterContact, MESSENGER_SUPPORT_H,
+                     'rgb(135,155,180)', 0.65, a);
+      }
       if (passing > 0.015) {
         worldSegment(d, leftSidingContact, 6.1, d, leftSidingContact, MESSENGER_SUPPORT_H,
                      'rgb(135,155,180)', 0.65, a * passing);
@@ -997,9 +1103,9 @@ html.screensaver .hud { display: none; }
       if (d >= MAXD) break;
       // Reserve one complete block-signal interval on both sides of each
       // paired home signal; every signal outside that zone stays unchanged.
-      if (!isNearPassingHomeSignal(s)) drawSignal(n, d, HOME_MAIN_LAT);
+      if (!isNearTerminalHomeSignal(s)) drawSignal(n, d, HOME_MAIN_LAT);
     }
-    drawPassingHomeSignals();
+    drawTerminalHomeSignals();
     drawStation();
   }
 
@@ -1079,11 +1185,15 @@ html.screensaver .hud { display: none; }
     const firstIndex = Math.floor((trackS - STATION_END) / STATION_CYCLE) - 1;
     const lastIndex = Math.floor((trackS + MAXD) / STATION_CYCLE) + 1;
     for (let stationIndex = firstIndex; stationIndex <= lastIndex; stationIndex++) {
-      if (!isPassingStation(stationIndex)) continue;
+      if (!isTerminalStation(stationIndex)) continue;
       // Each direction is decided independently, so a station may contain no
       // stopped train, one train, or trains on both outer sidings.
-      drawStoppedTrain(stationIndex, MAIN_TRACK_LEFT, SIDING_LEFT, false, 301);
-      drawStoppedTrain(stationIndex, MAIN_TRACK_RIGHT, SIDING_RIGHT, true, 303);
+      drawStoppedTrain(stationIndex, quadrupleTrack ? OUTER_TRACK_LEFT : MAIN_TRACK_LEFT,
+                       quadrupleTrack ? QUAD_TERMINAL_SIDING_LEFT : SIDING_LEFT,
+                       false, 301);
+      drawStoppedTrain(stationIndex, quadrupleTrack ? OUTER_TRACK_RIGHT : MAIN_TRACK_RIGHT,
+                       quadrupleTrack ? QUAD_TERMINAL_SIDING_RIGHT : SIDING_RIGHT,
+                       true, 303);
     }
   }
 
@@ -1123,6 +1233,19 @@ html.screensaver .hud { display: none; }
   const kmhEl = document.getElementById('kmh');
   const hud = document.getElementById('hud');
   const pauseBtn = document.getElementById('pause');
+  const trackModeBtn = document.getElementById('trackMode');
+
+  function updateTrackModeButton() {
+    trackModeBtn.textContent = quadrupleTrack ? T.quadrupleTrack : T.doubleTrack;
+    trackModeBtn.setAttribute('aria-pressed', String(quadrupleTrack));
+    trackModeBtn.setAttribute('aria-label', quadrupleTrack ? T.switchToDouble : T.switchToQuadruple);
+  }
+
+  trackModeBtn.addEventListener('click', () => {
+    quadrupleTrack = !quadrupleTrack;
+    updateTrackModeButton();
+  });
+  updateTrackModeButton();
 
   function togglePause() {
     paused = !paused;
